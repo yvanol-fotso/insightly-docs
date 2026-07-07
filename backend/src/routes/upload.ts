@@ -5,6 +5,7 @@ import { extractTextFromPDF } from "../services/pdfLoader";
 import { chunkText } from "../services/chunker";
 import { embedText } from "../services/embeddings";
 import { addToStore, getStoreSize } from "../services/vectorStore";
+import { pool } from "../services/db";
 import pdfParse from "pdf-parse";
 import fs from "fs";
 
@@ -26,13 +27,19 @@ const MAX_TOTAL_PAGES = 500;
 
 router.post("/upload", upload.array("files", MAX_FILES), async (req, res) => {
   const files = req.files as Express.Multer.File[];
+  const sessionId = req.body.sessionId; // nouveau send par le frontend
 
   if (!files || files.length === 0) {
     return res.status(400).json({ error: "Aucun fichier reçu" });
   }
 
+  if (!sessionId) {
+    return res.status(400).json({ error: "Le champ 'sessionId' est requis" });
+  }
+
   try {
-    // 1. Vérifier le nombre total de pages AVANT de tout traiter
+
+    // check  le nombre total de pages avant de tout traiter
     let totalPages = 0;
     const pageCounts: { filename: string; pages: number }[] = [];
 
@@ -50,7 +57,7 @@ router.post("/upload", upload.array("files", MAX_FILES), async (req, res) => {
       });
     }
 
-    // 2. Traiter chaque fichier : extraction → chunking → embeddings → stockage
+    // phase 2 Traite chaque fichier  extraction -> chunking -> embeddings -> stockage
     const results = [];
 
     for (const file of files) {
@@ -66,10 +73,17 @@ router.post("/upload", upload.array("files", MAX_FILES), async (req, res) => {
           ...chunk,
           embedding,
           filename: file.filename,
+          sessionId, 
         });
       }
 
       await addToStore(chunksWithEmbeddings);
+
+      // new pr garder une trace du document en base pour pouvoir l'afficher plus tard
+      await pool.query(
+        `INSERT INTO documents (session_id, filename, chunks) VALUES ($1, $2, $3)`,
+        [sessionId, file.filename, chunks.length]
+      );
 
       results.push({
         filename: file.filename,

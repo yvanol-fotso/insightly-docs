@@ -1,20 +1,25 @@
+import { pool } from "./db";
+
 interface Message {
   role: "user" | "assistant";
   content: string;
 }
 
-const conversations: Map<string, Message[]> = new Map();
-
-export function getHistory(sessionId: string): Message[] {
-  return conversations.get(sessionId) || [];
+export async function getHistory(sessionId: string): Promise<Message[]> {
+  const result = await pool.query(
+    `SELECT role, content FROM messages WHERE session_id = $1 ORDER BY created_at ASC`,
+    [sessionId]
+  );
+  return result.rows;
 }
 
-export function addMessage(sessionId: string, message: Message) {
-  const history = conversations.get(sessionId) || [];
-  history.push(message);
-  conversations.set(sessionId, history);
+export async function addMessage(sessionId: string, message: Message) {
+  await pool.query(
+    `INSERT INTO messages (session_id, role, content) VALUES ($1, $2, $3)`,
+    [sessionId, message.role, message.content]
+  );
 }
 
-export function clearHistory(sessionId: string) {
-  conversations.delete(sessionId);
+export async function clearHistory(sessionId: string) {
+  await pool.query(`DELETE FROM messages WHERE session_id = $1`, [sessionId]);
 }

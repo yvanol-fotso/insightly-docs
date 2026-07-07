@@ -11,14 +11,17 @@ interface Message {
 
 interface ChatBoxProps {
   sessionId: string;
+  initialMessages?: Message[]; 
   onDocumentsIndexed: (documents: DocumentEntry[]) => void;
+  onMessageSent?: () => void; 
 }
+
 
 const MAX_FILES = 5;
 const MAX_PAGES = 500;
 
-export default function ChatBox({ sessionId, onDocumentsIndexed }: ChatBoxProps) {
-  const [messages, setMessages] = useState<Message[]>([]);
+export default function ChatBox({ sessionId, initialMessages = [], onDocumentsIndexed, onMessageSent }: ChatBoxProps) {
+  const [messages, setMessages] = useState<Message[]>(initialMessages); // new init avec l'historique
   const [input, setInput] = useState("");
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [isSending, setIsSending] = useState(false);
@@ -35,25 +38,20 @@ export default function ChatBox({ sessionId, onDocumentsIndexed }: ChatBoxProps)
 
   const handleAttachClick = () => fileInputRef.current?.click();
 
-  const handleFilesSelected = (fileList: FileList | null) => {
+  // Upload immédiat dès qu'on choisit un ou plusieurs PDF.
+  const handleFilesSelected = async (fileList: FileList | null) => {
     if (!fileList) return;
     const incoming = Array.from(fileList).filter((f) => f.type === "application/pdf");
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    if (incoming.length === 0) return;
+
     const combined = [...pendingFiles, ...incoming].slice(0, MAX_FILES);
     setPendingFiles(combined);
     setUploadError(null);
-    if (fileInputRef.current) fileInputRef.current.value = "";
-  };
-
-  const removePendingFile = (name: string) => {
-    setPendingFiles((prev) => prev.filter((f) => f.name !== name));
-  };
-
-  const runUpload = async (): Promise<boolean> => {
-    if (pendingFiles.length === 0) return true;
     setIsUploading(true);
-    setUploadError(null);
+
     try {
-      const result = await uploadFiles(pendingFiles, sessionId);
+      const result = await uploadFiles(combined, sessionId);
       onDocumentsIndexed(
         result.files.map((f) => ({
           filename: f.filename,
@@ -61,28 +59,22 @@ export default function ChatBox({ sessionId, onDocumentsIndexed }: ChatBoxProps)
         }))
       );
       setPendingFiles([]);
-      return true;
     } catch (err) {
       console.error(err);
       const message = err instanceof Error ? err.message : "L'indexation des documents a echoue.";
       setUploadError(message);
-      return false;
     } finally {
       setIsUploading(false);
     }
   };
 
+  const removePendingFile = (name: string) => {
+    setPendingFiles((prev) => prev.filter((f) => f.name !== name));
+  };
+
   const handleSend = async () => {
     const question = input.trim();
-    if (!question && pendingFiles.length === 0) return;
-    if (isSending || isUploading) return;
-
-    if (pendingFiles.length > 0) {
-      const ok = await runUpload();
-      if (!ok) return;
-    }
-
-    if (!question) return;
+    if (!question || isSending || isUploading) return;
 
     setMessages((prev) => [...prev, { role: "user", content: question }]);
     setInput("");
@@ -92,6 +84,7 @@ export default function ChatBox({ sessionId, onDocumentsIndexed }: ChatBoxProps)
     try {
       const result = await askQuestion(question, sessionId);
       setMessages((prev) => [...prev, { role: "assistant", content: result.answer, sources: result.sources }]);
+       onMessageSent?.(); 
     } catch (err) {
       console.error(err);
       const message = err instanceof Error ? err.message : "Une erreur est survenue pendant la generation de la reponse.";
@@ -115,7 +108,7 @@ export default function ChatBox({ sessionId, onDocumentsIndexed }: ChatBoxProps)
     el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
   };
 
-  const canSend = (input.trim().length > 0 || pendingFiles.length > 0) && !isSending && !isUploading;
+  const canSend = input.trim().length > 0 && !isSending && !isUploading;
 
   return (
     <div className="chat">
@@ -153,6 +146,8 @@ export default function ChatBox({ sessionId, onDocumentsIndexed }: ChatBoxProps)
       </div>
 
       <div className="composer">
+        {(isUploading || isSending) && <div className="composer__progress" />}
+
         {pendingFiles.length > 0 && (
           <div className="composer__attachments">
             {pendingFiles.map((file) => (
@@ -186,7 +181,7 @@ export default function ChatBox({ sessionId, onDocumentsIndexed }: ChatBoxProps)
           <button
             className="icon-button composer__attach"
             onClick={handleAttachClick}
-            disabled={pendingFiles.length >= MAX_FILES}
+            disabled={pendingFiles.length >= MAX_FILES || isUploading}
             aria-label="Joindre des PDF"
             title="Joindre des PDF"
           >

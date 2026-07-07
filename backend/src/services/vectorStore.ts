@@ -3,6 +3,7 @@ import { ChromaClient, EmbeddingFunction } from "chromadb";
 const client = new ChromaClient({ path: "http://localhost:8000" });
 const COLLECTION_NAME = "rag_poc";
 
+
 // jamais call car on fournit toujour nos propres embeddings
 const noopEmbeddingFunction: EmbeddingFunction = {
   generate: async (texts: string[]): Promise<number[][]> => {
@@ -27,25 +28,31 @@ interface StoredChunk {
   content: string;
   embedding: number[];
   filename: string;
+  sessionId: string; 
 }
 
 export async function addToStore(chunks: StoredChunk[]) {
   const col = await getCollection();
 
   await col.add({
-    ids: chunks.map((c) => `${c.filename}-${c.id}`),
+    ids: chunks.map((c) => `${c.sessionId}-${c.filename}-${c.id}`),
     embeddings: chunks.map((c) => c.embedding),
     documents: chunks.map((c) => c.content),
-    metadatas: chunks.map((c) => ({ filename: c.filename })),
+    metadatas: chunks.map((c) => ({ filename: c.filename, sessionId: c.sessionId })),
   });
 }
 
-export async function searchSimilar(queryEmbedding: number[], topK: number = 3) {
+export async function searchSimilar(
+  queryEmbedding: number[],
+  sessionId: string, 
+  topK: number = 3
+) {
   const col = await getCollection();
 
   const results = await col.query({
     queryEmbeddings: [queryEmbedding],
     nResults: topK,
+    where: { sessionId }, 
   });
 
   const documents = results.documents[0] as string[];

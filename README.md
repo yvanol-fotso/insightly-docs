@@ -2,13 +2,14 @@
 
 Proof of Concept du chatbot RAG permettant d'uploader des documents PDF (1 à 5 fichiers, 500 pages cumulées max) et de poser des questions dessus en langage naturel.
 
-##  Stack technique
+## Stack technique
 
 - **Backend** : Node.js / TypeScript, Express
 - **Frontend** : React (Vite) / TypeScript
-- **Embeddings** : `@xenova/transformers` (modèle `Xenova/all-MiniLM-L6-v2`, local, free)
+- **Embeddings** : `@xenova/transformers` (modèle `Xenova/all-MiniLM-L6-v2`, local, gratuit)
 - **Vector Database** : Chroma (persistance sur disque)
-- **LLM** : Groq (modèle `llama-3.3-70b-versatile`, car gratuit)
+- **LLM** : Groq (modèle `llama-3.3-70b-versatile`, gratuit)
+- **Base de données** : PostgreSQL (historique des conversations et documents par session)
 
 ## Fonctionnalités
 
@@ -16,18 +17,24 @@ Proof of Concept du chatbot RAG permettant d'uploader des documents PDF (1 à 5 
 - Extraction et nettoyage du texte
 - Découpage en chunks avec chevauchement (overlap)
 - Génération d'embeddings locaux
-- Stockage vectoriel persistant via Chroma
+- Stockage vectoriel persistant via Chroma, scopé par conversation (sessionId)
 - Recherche par similarité (retrieval)
 - Génération de réponse contextualisée via LLM (Groq)
-- Historique de conversation par session
+- Historique de conversation persistant par session, navigable depuis la sidebar
+- Chaque conversation garde son propre lot de documents indexés
 
-> **Historique de conversation**
+> **Historique de conversation et documents**
 >
-> Dans ce poc, l'historique des conversations est conservé **uniquement en mémoire** côté backend, à l'aide d'une `Map` associant chaque `sessionId` à la liste des messages échangés.
+> L'historique des messages ainsi que la liste des documents indexés par conversation sont stockés dans PostgreSQL (tables `messages` et `documents`, associées par `session_id`). Cela permet de retrouver et recharger une conversation passée, avec ses documents, même après un redémarrage du serveur.
 >
-> aucun mecanisme de persistance (base de données, Redis) n'est utilisé. Par conséquent, toutes les conversations sont supprimées automatiquement lorsque le serveur est arrêté ou redémarré.
+> Les vecteurs d'embeddings restent stockés dans Chroma, filtrés eux aussi par `sessionId` afin que chaque conversation n'interroge que ses propres documents.
 
+## Prérequis
 
+- Node.js (v18+)
+- Python (pour faire tourner Chroma)
+- PostgreSQL (v14+)
+- Une clé API Groq (gratuite)
 
 ## Installation
 
@@ -47,22 +54,37 @@ chroma run --path ./chroma_data
 
 Laisse ce terminal ouvert. Chroma tourne sur `http://localhost:8000`.
 
-### 3. Configurer et lancer le backend
+### 3. Configurer PostgreSQL
 
-Dans un nouveau terminal :
+Crée la base de données 
+
+```bash
+psql -U postgres
+```
+
+Puis dans `psql` :
+
+```sql
+CREATE DATABASE rag_poc;
+```
+
+La table `messages` et la table `documents` sont créées automatiquement au démarrage du backend si elles n'existent pas.
+
+### 4. Configurer et lancer le backend
 
 ```bash
 cd backend
 npm install
 ```
 
-lire la variable de .env.example et creer le fichier `.env` à la racine de `backend/` avec  la clé Groq fourni :
+puis lire la variable de `.env.example` et créer le fichier `.env` à la racine de `backend/` avec la clé Groq fournie et les identifiants PostgreSQL :
 
 ```
-GROQ_API_KEY=ta_cle_groq_ici
+GROQ_API_KEY=groq_xxxxx
+DATABASE_URL=postgresql://postgres:ton_mot_de_passe@localhost:5432/rag_poc
 ```
 
-Lance le serveur :
+Lance le serveur 
 
 ```bash
 npm run dev
@@ -70,7 +92,7 @@ npm run dev
 
 Le backend tourne sur `http://localhost:3000`.
 
-### 4. Lancer le frontend
+### 5. Lancer le frontend
 
 Dans un nouveau terminal :
 
@@ -85,9 +107,10 @@ Le frontend tourne sur `http://localhost:5173`.
 ## Utilisation
 
 1. Ouvre `http://localhost:5173` dans ton navigateur
-2. Uploade un ou plusieurs PDF via le formulaire d'upload
+2. Crée une nouvelle conversation, uploade un ou plusieurs PDF via la zone de saisie
 3. Pose tes questions dans la zone de chat
 4. Les réponses s'affichent avec les sources (documents) utilisées
+5. Retrouve et reprends une conversation passée depuis la liste dans la sidebar
 
 ## Architecture du projet
 
@@ -95,30 +118,23 @@ Le frontend tourne sur `http://localhost:5173`.
 poc-chatbot-rag/
 ├── backend/
 │   ├── src/
-│   │   ├── routes/         # Routes API (upload, chat)
-│   │   ├── services/       # Logique métier (extraction, chunking, embeddings, vectorStore, llm, conversationStore)
+│   │   ├── routes/         # Routes API (upload, chat, sessions)
+│   │   ├── services/       # Logique métier (extraction, chunking, embeddings, vectorStore, llm, conversationStore, db)
 │   │   └── server.ts
 │   └── uploads/             # PDF uploadés
 ├── frontend/
 │   └── src/
-│       ├── api/             # call du backend
-│       └── components/      # FileUpload, ChatBox
+│       ├── api/             # Appels au backend
+│       └── components/      # FileUpload, ChatBox, Sidebar
 ```
 
-
-
-
 ## Test de l'API avec Postman ou cURL
-
-**Postman** ou **cURL**.
 
 ### URL du backend
 
 ```
 http://localhost:3000
 ```
-
----
 
 ### 1. Upload d'un ou plusieurs PDF
 
@@ -134,18 +150,17 @@ POST /api/upload
 http://localhost:3000/api/upload
 ```
 
-dans le body add plusieur file.
+Le body doit contenir plusieurs fichiers sous la clé `files`, ainsi qu'un champ `sessionId`.
 
-####  avec cURL
+#### Exemple avec cURL
 
 ```bash
 curl -X POST http://localhost:3000/api/upload \
-  -F "file=@/chemin-vers-document.pdf"
+  -F "files=@/chemin-vers-document.pdf" \
+  -F "sessionId=session-test"
 ```
 
----
-
-### 2. poser une question au chatbot
+### 2. Poser une question au chatbot
 
 **Endpoint**
 
@@ -164,21 +179,33 @@ http://localhost:3000/api/chat
 ```bash
 curl -X POST http://localhost:3000/api/chat \
   -H "Content-Type: application/json" \
-  -d "{\"question\":\"Quelle est la durée de la formation ?\"}"
+  -d "{\"question\":\"Quelle est la durée de la formation ?\",\"sessionId\":\"session-test\"}"
 ```
 
----
+### 3. Lister les conversations
 
-###  avec Postman
+**Endpoint**
 
-Pour tester avec **Postman** :
+```
+GET /api/sessions
+```
+
+### 4. Charger une conversation précise
+
+**Endpoint**
+
+```
+GET /api/sessions/:sessionId
+```
+
+### Avec Postman
 
 - **Upload**
   - Méthode : `POST`
   - URL : `http://localhost:3000/api/upload`
   - Body → `form-data`
-  - Clé : `file` (type **File**)
-  - Sélectionner un ou plusieurs fichiers PDF
+  - Clé : `files` (type **File**, sélectionner un ou plusieurs PDF)
+  - Clé : `sessionId` (type **Text**)
 
 - **Chat**
   - Méthode : `POST`
@@ -191,13 +218,12 @@ Pour tester avec **Postman** :
 
 ```json
 {
-  "question": "Quelle est la durée de la formation ?"
+  "question": "Quelle est la durée de la formation ?",
+  "sessionId": "session-test"
 }
 ```
 
-
-
-## screenhots
+## Screenshots
 
 ![Capture 1](Screenshots/1.png)
 
@@ -214,3 +240,23 @@ Pour tester avec **Postman** :
 ![Capture 7](Screenshots/7.png)
 
 ![Capture 8](Screenshots/8.png)
+
+![Capture 9](Screenshots/9.png)
+
+![Capture 10](Screenshots/10.png)
+
+![Capture 11](Screenshots/11.png)
+
+![Capture 12](Screenshots/12.png)
+
+![Capture 13](Screenshots/13.png)
+
+![Capture 14](Screenshots/14.png)
+
+![Capture 15](Screenshots/15.png)
+
+![Capture 16](Screenshots/16.png)
+
+![Capture 17](Screenshots/17.png)
+
+![Capture 18](Screenshots/18.png)
