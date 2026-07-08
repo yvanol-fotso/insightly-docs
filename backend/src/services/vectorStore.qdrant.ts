@@ -1,28 +1,36 @@
 // prod
-
 import { QdrantClient } from "@qdrant/js-client-rest";
 import { v5 as uuidv5 } from "uuid";
 
 const client = new QdrantClient({
-  url: process.env.QDRANT_URL,
-  apiKey: process.env.QDRANT_API_KEY,
+  url: process.env.QDRANT_URL?.trim(),
+  apiKey: process.env.QDRANT_API_KEY?.trim(),
 });
 
 const COLLECTION_NAME = "rag_poc";
-const VECTOR_SIZE = 384;
-const NAMESPACE = "1b671a64-40d5-491e-99b0-da01ff1f3341";
+const VECTOR_SIZE = 384; // taille des embeddings de Xenova/all-MiniLM-L6-v2
+const NAMESPACE = "1b671a64-40d5-491e-99b0-da01ff1f3341"; // new namespace fixe pour generer des UUID stables
 
 let collectionReady = false;
 
 async function ensureCollection() {
   if (collectionReady) return;
+
   const collections = await client.getCollections();
   const exists = collections.collections.some((c) => c.name === COLLECTION_NAME);
+
   if (!exists) {
     await client.createCollection(COLLECTION_NAME, {
       vectors: { size: VECTOR_SIZE, distance: "Cosine" },
     });
   }
+
+  // Cree de l'index sur sessionId requis par Qdrant pour pouvoir filtrer dessus. Idempotent.
+  await client.createPayloadIndex(COLLECTION_NAME, {
+    field_name: "sessionId",
+    field_schema: "keyword",
+  });
+
   collectionReady = true;
 }
 
@@ -36,8 +44,10 @@ interface StoredChunk {
 
 export async function addToStore(chunks: StoredChunk[]) {
   await ensureCollection();
+
   await client.upsert(COLLECTION_NAME, {
     points: chunks.map((c) => ({
+      // qdrant exige un id numérique ou UUID. On génère un UUID stable basé sur le sessionId, le nom de fichier et l'id du chunk.
       id: uuidv5(`${c.sessionId}-${c.filename}-${c.id}`, NAMESPACE),
       vector: c.embedding,
       payload: {
@@ -55,6 +65,7 @@ export async function searchSimilar(
   topK: number = 3
 ) {
   await ensureCollection();
+
   const results = await client.search(COLLECTION_NAME, {
     vector: queryEmbedding,
     limit: topK,
