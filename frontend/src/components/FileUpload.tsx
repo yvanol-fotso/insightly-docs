@@ -3,13 +3,15 @@ import { uploadFiles } from "../api/ragApi";
 import { FileIcon } from "./Icons";
 
 interface Props {
+  sessionId: string;
   onUploaded: (info: string) => void;
 }
 
 const MAX_FILES = 5;
 const MAX_PAGES = 500;
 
-export default function FileUpload({ onUploaded }: Props) {
+export default function FileUpload({ sessionId, onUploaded }: Props) {
+
   const [files, setFiles] = useState<File[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -17,7 +19,7 @@ export default function FileUpload({ onUploaded }: Props) {
     if (files.length === 0) return;
     setLoading(true);
     try {
-      const result = await uploadFiles(files);
+      const result = await uploadFiles(files, sessionId);
       onUploaded(`${result.files.length} fichier(s) indexé(s) (${result.totalStored} chunks au total)`);
       setFiles([]);
     } catch (err) {
