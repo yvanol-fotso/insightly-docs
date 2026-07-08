@@ -2,14 +2,25 @@
 
 Proof of Concept du chatbot RAG permettant d'uploader des documents PDF (1 à 5 fichiers, 500 pages cumulées max) et de poser des questions dessus en langage naturel.
 
+##  Démo en ligne
+
+- **Frontend** : [https://poc-chatbot-rag.vercel.app](https://poc-chatbot-rag.vercel.app)
+- **Backend (API)** : [https://poc-chatbot-rag.onrender.com](https://poc-chatbot-rag.onrender.com)
+
+>  Le backend est hébergé sur le plan gratuit de Render, qui met le service en veille après quelques minutes d'inactivité. Le premier appel après une période d'inactivité peut donc prendre 30 à 60 secondes le temps que le service redémarre.
+
 ## Stack technique
 
-- **Backend** : Node.js / TypeScript, Express
-- **Frontend** : React (Vite) / TypeScript
-- **Embeddings** : `@xenova/transformers` (modèle `Xenova/all-MiniLM-L6-v2`, local, gratuit)
-- **Vector Database** : Chroma (persistance sur disque)
-- **LLM** : Groq (modèle `llama-3.3-70b-versatile`, gratuit)
-- **Base de données** : PostgreSQL (historique des conversations et documents par session)
+| Composant | Local (développement) | Production (déployé) |
+|---|---|---|
+| Backend | Node.js / TypeScript, Express | Node.js / TypeScript, Express — [Render](https://render.com) |
+| Frontend | React (Vite) / TypeScript | React (Vite) / TypeScript — [Vercel](https://vercel.com) |
+| Embeddings | `@xenova/transformers` (`Xenova/all-MiniLM-L6-v2`, local, gratuit) | Identique |
+| Vector Database | [Chroma](https://www.trychroma.com/) (persistance sur disque local) | [Qdrant Cloud](https://qdrant.tech/) |
+| Base de données | PostgreSQL local | [Neon](https://neon.tech) (PostgreSQL serverless, gratuit) |
+| LLM | Groq (modèle `llama-3.3-70b-versatile`, gratuit) | Identique |
+
+Le projet est conçu pour tourner **soit en local avec Chroma, soit en production avec Qdrant**, sans aucune modification de code : le backend bascule automatiquement entre les deux selon la présence de la variable d'environnement `QDRANT_URL` (voir la section [Configuration du vector store](#configuration-du-vector-store)).
 
 ## Fonctionnalités
 
@@ -17,7 +28,7 @@ Proof of Concept du chatbot RAG permettant d'uploader des documents PDF (1 à 5 
 - Extraction et nettoyage du texte
 - Découpage en chunks avec chevauchement (overlap)
 - Génération d'embeddings locaux
-- Stockage vectoriel persistant via Chroma, scopé par conversation (sessionId)
+- Stockage vectoriel persistant (Chroma en local, Qdrant Cloud en production), scopé par conversation (`sessionId`)
 - Recherche par similarité (retrieval)
 - Génération de réponse contextualisée via LLM (Groq)
 - Historique de conversation persistant par session, navigable depuis la sidebar
@@ -27,16 +38,35 @@ Proof of Concept du chatbot RAG permettant d'uploader des documents PDF (1 à 5 
 >
 > L'historique des messages ainsi que la liste des documents indexés par conversation sont stockés dans PostgreSQL (tables `messages` et `documents`, associées par `session_id`). Cela permet de retrouver et recharger une conversation passée, avec ses documents, même après un redémarrage du serveur.
 >
-> Les vecteurs d'embeddings restent stockés dans Chroma, filtrés eux aussi par `sessionId` afin que chaque conversation n'interroge que ses propres documents.
+> Les vecteurs d'embeddings restent stockés séparément (Chroma ou Qdrant selon l'environnement), filtrés eux aussi par `sessionId` afin que chaque conversation n'interroge que ses propres documents.
+
+## Configuration du vector store
+
+Le backend détecte automatiquement quel vector store utiliser :
+
+- Si la variable d'environnement `QDRANT_URL` **n'est pas définie** → utilisation de **Chroma en local** (`http://localhost:8000`)
+- Si `QDRANT_URL` **est définie** → utilisation de **Qdrant Cloud**
+
+Cette bascule est gérée dans `backend/src/services/vectorStore.ts`, qui redirige vers `vectorStore.chroma.ts` ou `vectorStore.qdrant.ts` selon le cas. Aucun autre fichier du projet n'a besoin d'être modifié.
 
 ## Prérequis
 
+### Pour un lancement en local (Chroma)
+
 - Node.js (v18+)
 - Python (pour faire tourner Chroma)
-- PostgreSQL (v14+)
-- Une clé API Groq (gratuite)
+- PostgreSQL (v14+) — ou un compte [Neon](https://neon.tech) gratuit
+- Une clé API [Groq](https://console.groq.com) (gratuite)
 
-## Installation
+### Pour un déploiement en production (Qdrant)
+
+- Un compte [Qdrant Cloud](https://cloud.qdrant.io) (gratuit)
+- Un compte [Neon](https://neon.tech) (PostgreSQL serverless, gratuit)
+- Un compte [Render](https://render.com) (backend, gratuit)
+- Un compte [Vercel](https://vercel.com) (frontend, gratuit)
+- Une clé API [Groq](https://console.groq.com) (gratuite)
+
+## Installation en local (avec Chroma)
 
 ### 1. Cloner le projet
 
@@ -56,7 +86,7 @@ Laisse ce terminal ouvert. Chroma tourne sur `http://localhost:8000`.
 
 ### 3. Configurer PostgreSQL
 
-Crée la base de données 
+Crée la base de données
 
 ```bash
 psql -U postgres
@@ -77,14 +107,16 @@ cd backend
 npm install
 ```
 
-puis lire la variable de `.env.example` et créer le fichier `.env` à la racine de `backend/` avec la clé Groq fournie et les identifiants PostgreSQL :
+Puis lire la variable de `.env.example` et créer le fichier `.env` à la racine de `backend/` :
 
 ```
 GROQ_API_KEY=groq_xxxxx
 DATABASE_URL=postgresql://postgres:ton_mot_de_passe@localhost:5432/rag_poc
 ```
 
-Lance le serveur 
+Ne pas définir `QDRANT_URL` ni `QDRANT_API_KEY` en local - leur absence est ce qui déclenche automatiquement l'utilisation de Chroma.
+
+Lance le serveur
 
 ```bash
 npm run dev
@@ -104,9 +136,52 @@ npm run dev
 
 Le frontend tourne sur `http://localhost:5173`.
 
+## Déploiement en production (avec Qdrant, Neon, Render, Vercel)
+
+### 1. Base de données — Neon
+
+1. Crée un compte sur [neon.tech](https://neon.tech)
+2. Crée un projet et une base de données (ex: `rag_poc`)
+3. Récupère l'URL de connexion (`DATABASE_URL`)
+
+### 2. Vector store — Qdrant Cloud
+
+1. Crée un compte sur [cloud.qdrant.io](https://cloud.qdrant.io)
+2. Crée un cluster gratuit
+3. Récupère l'URL du cluster (`QDRANT_URL`) et la clé API (`QDRANT_API_KEY`)
+
+### 3. Backend — Render
+
+1. Crée un compte sur [render.com](https://render.com)
+2. New Web Service → connecte le dépôt GitHub → Root Directory : `backend`
+3. Build Command : `npm install && npm run build`
+4. Start Command : `npm start`
+5. Ajoute les variables d'environnement :
+
+```
+GROQ_API_KEY=groq_xxxxx
+DATABASE_URL=postgresql://...neon.tech/rag_poc?sslmode=require
+QDRANT_URL=https://xxxxx.aws.cloud.qdrant.io
+QDRANT_API_KEY=xxxxx
+```
+
+6. Déploie → tu obtiens une URL du type `https://xxxxx.onrender.com`
+
+### 4. Frontend — Vercel
+
+1. Crée un compte sur [vercel.com](https://vercel.com)
+2. Import Project → Root Directory : `frontend`
+3. Ajoute la variable d'environnement :
+
+```
+VITE_API_URL=https://xxxxx.onrender.com/api
+```
+
+4. Déploie → tu obtiens une URL du type `https://xxxxx.vercel.app`
+
 ## Utilisation
 
-1. Ouvre `http://localhost:5173` dans ton navigateur
+1. Ouvre le frontend (local ou en ligne) dans ton navigateur
 2. Crée une nouvelle conversation, uploade un ou plusieurs PDF via la zone de saisie
 3. Pose tes questions dans la zone de chat
 4. Les réponses s'affichent avec les sources (documents) utilisées
@@ -118,23 +193,30 @@ Le frontend tourne sur `http://localhost:5173`.
 poc-chatbot-rag/
 ├── backend/
 │   ├── src/
-│   │   ├── routes/         # Routes API (upload, chat, sessions)
-│   │   ├── services/       # Logique métier (extraction, chunking, embeddings, vectorStore, llm, conversationStore, db)
+│   │   ├── routes/                    # Routes API (upload, chat, sessions)
+│   │   ├── services/
+│   │   │   ├── vectorStore.ts         # Point d'entrée : bascule Chroma <-> Qdrant
+│   │   │   ├── vectorStore.chroma.ts   # Implémentation Chroma (local)
+│   │   │   ├── vectorStore.qdrant.ts   # Implémentation Qdrant (production)
+│   │   │   ├── db.ts                  # Connexion PostgreSQL / Neon
+│   │   │   ├── conversationStore.ts   # Historique des messages
+│   │   │   ├── embeddings.ts
+│   │   │   ├── chunker.ts
+│   │   │   └── llm.ts
 │   │   └── server.ts
-│   └── uploads/             # PDF uploadés
+│   └── uploads/                        # PDF uploadés (temporaire, non persistant en production)
 ├── frontend/
 │   └── src/
-│       ├── api/             # Appels au backend
-│       └── components/      # FileUpload, ChatBox, Sidebar
+│       ├── api/                        # Appels au backend
+│       └── components/                 # FileUpload, ChatBox, Sidebar
 ```
 
 ## Test de l'API avec Postman ou cURL
 
 ### URL du backend
 
-```
-http://localhost:3000
-```
+- Local : `http://localhost:3000`
+- Production : `https://poc-chatbot-rag.onrender.com`
 
 ### 1. Upload d'un ou plusieurs PDF
 
@@ -142,12 +224,6 @@ http://localhost:3000
 
 ```
 POST /api/upload
-```
-
-**URL complète**
-
-```
-http://localhost:3000/api/upload
 ```
 
 Le body doit contenir plusieurs fichiers sous la clé `files`, ainsi qu'un champ `sessionId`.
@@ -166,12 +242,6 @@ curl -X POST http://localhost:3000/api/upload \
 
 ```
 POST /api/chat
-```
-
-**URL complète**
-
-```
-http://localhost:3000/api/chat
 ```
 
 #### Exemple avec cURL
@@ -202,18 +272,15 @@ GET /api/sessions/:sessionId
 
 - **Upload**
   - Méthode : `POST`
-  - URL : `http://localhost:3000/api/upload`
+  - URL : `{BASE_URL}/api/upload`
   - Body → `form-data`
   - Clé : `files` (type **File**, sélectionner un ou plusieurs PDF)
   - Clé : `sessionId` (type **Text**)
 
 - **Chat**
   - Méthode : `POST`
-  - URL : `http://localhost:3000/api/chat`
-  - Header :
-    ```
-    Content-Type: application/json
-    ```
+  - URL : `{BASE_URL}/api/chat`
+  - Header : `Content-Type: application/json`
   - Body → `raw` → `JSON`
 
 ```json
@@ -226,37 +293,20 @@ GET /api/sessions/:sessionId
 ## Screenshots
 
 ![Capture 1](Screenshots/1.png)
-
 ![Capture 2](Screenshots/2.png)
-
 ![Capture 3](Screenshots/3.png)
-
 ![Capture 4](Screenshots/4.png)
-
 ![Capture 5](Screenshots/5.png)
-
 ![Capture 6](Screenshots/6.png)
-
 ![Capture 7](Screenshots/7.png)
-
 ![Capture 8](Screenshots/8.png)
-
 ![Capture 9](Screenshots/9.png)
-
 ![Capture 10](Screenshots/10.png)
-
 ![Capture 11](Screenshots/11.png)
-
 ![Capture 12](Screenshots/12.png)
-
 ![Capture 13](Screenshots/13.png)
-
 ![Capture 14](Screenshots/14.png)
-
 ![Capture 15](Screenshots/15.png)
-
 ![Capture 16](Screenshots/16.png)
-
 ![Capture 17](Screenshots/17.png)
-
 ![Capture 18](Screenshots/18.png)
