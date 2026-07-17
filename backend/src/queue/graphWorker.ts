@@ -1,7 +1,7 @@
 import { Worker, Job } from "bullmq";
 import { connection } from "./redis";
 import { GraphIngestionJobData } from "./graphQueue";
-import { extractEntitiesAndRelations } from "../services/rag/graphExtraction";
+import { extractEntitiesAndRelationsBatched } from "../services/rag/graphExtraction";
 import { ingestExtraction } from "../services/rag/graphStore";
 import {
   markProcessing,
@@ -17,15 +17,22 @@ export function startGraphWorker() {
       const { jobId, sessionId, filename, chunks } = job.data;
 
       await markProcessing(jobId);
-      console.log(`[graph-worker] Début indexation graphe : ${filename} (${chunks.length} chunks)`);
+      console.log(`[graph-worker] Début indexation graphe (batched) : ${filename} (${chunks.length} chunks)`);
 
-      for (const chunk of chunks) {
-        try {
-          const extraction = await extractEntitiesAndRelations(chunk.content);
-          await ingestExtraction(extraction, sessionId, filename);
+      const chunkContents = chunks.map((c) => c.content);
+
+      try {
+        const extraction = await extractEntitiesAndRelationsBatched(chunkContents);
+        await ingestExtraction(extraction, sessionId, filename);
+
+        // on marque la progression comme complète en une fois, vu que le traitement
+        // est désormais fait par batch et non plus chunk par chunk
+        for (let i = 0; i < chunks.length; i++) {
           await incrementProgress(jobId, false);
-        } catch (error) {
-          console.error(`[graph-worker] Échec sur un chunk de ${filename} :`, error);
+        }
+      } catch (error) {
+        console.error(`[graph-worker] Échec du batch pour ${filename} :`, error);
+        for (let i = 0; i < chunks.length; i++) {
           await incrementProgress(jobId, true);
         }
       }
@@ -35,7 +42,7 @@ export function startGraphWorker() {
     },
     {
       connection,
-      concurrency: 1, // un document à la fois pour l'instant ; on ajustera au rate limiting (étape 2)
+      concurrency: 1,
     }
   );
 
