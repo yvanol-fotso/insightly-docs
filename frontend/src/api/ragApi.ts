@@ -19,6 +19,7 @@ export interface UploadResult {
   totalPages: number;
   files: UploadedFile[];
   totalStored: number;
+  graphIngestion?: boolean;
 }
 
 export interface Source {
@@ -103,4 +104,29 @@ export async function getSession(sessionId: string) {
   }>(`/sessions/${sessionId}`);
 
   return data;
+}
+
+
+export interface IndexingJob {
+  id: number;
+  session_id: string;
+  filename: string;
+  status: "pending" | "processing" | "completed" | "failed";
+  total_chunks: number;
+  processed_chunks: number;
+  failed_chunks: number;
+  error_message: string | null;
+}
+
+export async function getIndexingStatus(sessionId: string): Promise<IndexingJob[]> {
+  try {
+    const { data } = await api.get<{ jobs: IndexingJob[] }>(
+      `/indexing-status/${sessionId}`
+    );
+    return data.jobs;
+  } catch (error: any) {
+    throw new Error(
+      `Echec de la récupération du statut d'indexation (${error.response?.status ?? "unknown"})`
+    );
+  }
 }

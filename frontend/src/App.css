@@ -563,3 +563,61 @@
   background: var(--panel-hover);
   color: var(--text-faint);
 }
+
+/* ---------- Indexing progress (GraphRAG) ---------- */
+
+.indexing-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.indexing-progress__item {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  border: 1px solid var(--border);
+}
+
+.indexing-progress__label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.indexing-progress__bar-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--border-subtle);
+  overflow: hidden;
+}
+
+.indexing-progress__bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent), var(--teal));
+  transition: width 0.4s ease;
+}
+
+.indexing-progress__meta {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-top: 4px;
+}
+
+.indexing-progress__warning {
+  color: #f59e0b;
+}
+
+.indexing-progress__error {
+  font-size: 13px;
+  color: var(--danger);
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--danger-bg);
+  border: 1px solid rgba(240, 102, 90, 0.35);
+}
