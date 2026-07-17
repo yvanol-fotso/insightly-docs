@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { askQuestion, uploadFiles } from "../api/ragApi";
 import { CloseIcon, FileIcon, PlusIcon, SendIcon } from "./Icons";
 import type { DocumentEntry } from "./Sidebar";
+import IndexingProgress from "./IndexingProgress";
 
 interface Message {
   role: "user" | "assistant";
@@ -11,22 +12,22 @@ interface Message {
 
 interface ChatBoxProps {
   sessionId: string;
-  initialMessages?: Message[]; 
+  initialMessages?: Message[];
   onDocumentsIndexed: (documents: DocumentEntry[]) => void;
-  onMessageSent?: () => void; 
+  onMessageSent?: () => void;
 }
-
 
 const MAX_FILES = 5;
 const MAX_PAGES = 500;
 
 export default function ChatBox({ sessionId, initialMessages = [], onDocumentsIndexed, onMessageSent }: ChatBoxProps) {
-  const [messages, setMessages] = useState<Message[]>(initialMessages); // new init avec l'historique
+  const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [input, setInput] = useState("");
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [isSending, setIsSending] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [showIndexingProgress, setShowIndexingProgress] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -58,6 +59,11 @@ export default function ChatBox({ sessionId, initialMessages = [], onDocumentsIn
           chunks: f.totalChunks,
         }))
       );
+
+      if (result.graphIngestion) {
+        setShowIndexingProgress(true);
+      }
+
       setPendingFiles([]);
     } catch (err) {
       console.error(err);
@@ -84,7 +90,7 @@ export default function ChatBox({ sessionId, initialMessages = [], onDocumentsIn
     try {
       const result = await askQuestion(question, sessionId);
       setMessages((prev) => [...prev, { role: "assistant", content: result.answer, sources: result.sources }]);
-       onMessageSent?.(); 
+      onMessageSent?.();
     } catch (err) {
       console.error(err);
       const message = err instanceof Error ? err.message : "Une erreur est survenue pendant la generation de la reponse.";
@@ -167,6 +173,15 @@ export default function ChatBox({ sessionId, initialMessages = [], onDocumentsIn
         )}
 
         {uploadError && <div className="composer__error">{uploadError}</div>}
+
+        {showIndexingProgress && (
+          <IndexingProgress
+            sessionId={sessionId}
+            onAllCompleted={() => {
+              setTimeout(() => setShowIndexingProgress(false), 4000);
+            }}
+          />
+        )}
 
         <div className="composer__input-row">
           <input
