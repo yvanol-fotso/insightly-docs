@@ -1,5 +1,6 @@
 import neo4j, { Driver, Session } from "neo4j-driver";
 import { ExtractionResult } from "./graphExtraction";
+import { normalizeEntityName, pickBetterDisplayName } from "./entityNormalization";
 
 let driver: Driver | null = null;
 
@@ -23,10 +24,6 @@ export async function closeGraphDriver() {
   }
 }
 
-/**
- * Insère les entités et relations extraites d'un chunk dans le graphe,
- * scopées par sessionId (comme pour Chroma/Qdrant) et rattachées au document source.
- */
 export async function ingestExtraction(
   extraction: ExtractionResult,
   sessionId: string,
@@ -37,28 +34,67 @@ export async function ingestExtraction(
   const session: Session = getDriver().session();
   try {
     await session.executeWrite(async (tx) => {
-      // upsert des entités
+      // upsert des entités, fusionnées par clé normalisée
       for (const entity of extraction.entities) {
+        const { key, display } = normalizeEntityName(entity.name);
+        if (!key) continue; // sécurité si la normalisation vide totalement le nom
+
         await tx.run(
-          `MERGE (e:Entity { name: $name, sessionId: $sessionId })
-           ON CREATE SET e.type = $type, e.sources = [$filename]
-           ON MATCH SET e.sources = CASE
-             WHEN NOT $filename IN e.sources THEN e.sources + $filename
-             ELSE e.sources
-           END`,
-          { name: entity.name, type: entity.type, sessionId, filename }
+          `MERGE (e:Entity { key: $key, sessionId: $sessionId })
+           ON CREATE SET e.displayName = $display, e.type = $type, e.sources = [$filename]
+           ON MATCH SET
+             e.sources = CASE
+               WHEN NOT $filename IN e.sources THEN e.sources + $filename
+               ELSE e.sources
+             END`,
+          { key, sessionId, display, type: entity.type, filename }
         );
       }
 
-      // upsert des relations
+      // upsert des relations, elles aussi fusionnées par clé normalisée sur source/target
       for (const rel of extraction.relations) {
-        const relType = rel.relation.replace(/[^A-Z0-9_]/gi, "_").toUpperCase();
+        const source = normalizeEntityName(rel.source);
+        const target = normalizeEntityName(rel.target);
+        if (!source.key || !target.key) continue;
+
         await tx.run(
-          `MERGE (a:Entity { name: $source, sessionId: $sessionId })
-           MERGE (b:Entity { name: $target, sessionId: $sessionId })
-           MERGE (a)-[r:${relType}]->(b)`,
-          { source: rel.source, target: rel.target, sessionId }
+          `MERGE (a:Entity { key: $sourceKey, sessionId: $sessionId })
+           ON CREATE SET a.displayName = $sourceDisplay
+           MERGE (b:Entity { key: $targetKey, sessionId: $sessionId })
+           ON CREATE SET b.displayName = $targetDisplay
+           MERGE (a)-[r:${rel.relation}]->(b)`,
+          {
+            sourceKey: source.key,
+            sourceDisplay: source.display,
+            targetKey: target.key,
+            targetDisplay: target.display,
+            sessionId,
+          }
         );
+      }
+    });
+
+    // Deuxième passe : affine le displayName si un nom "plus propre" a été vu
+    // (fait séparément pour rester simple sur la logique de MERGE ci-dessus)
+    await session.executeWrite(async (tx) => {
+      for (const entity of extraction.entities) {
+        const { key, display } = normalizeEntityName(entity.name);
+        if (!key) continue;
+
+        const result = await tx.run(
+          `MATCH (e:Entity { key: $key, sessionId: $sessionId }) RETURN e.displayName AS current`,
+          { key, sessionId }
+        );
+        const current = result.records[0]?.get("current") as string | undefined;
+        if (!current) continue;
+
+        const better = pickBetterDisplayName(current, display);
+        if (better !== current) {
+          await tx.run(
+            `MATCH (e:Entity { key: $key, sessionId: $sessionId }) SET e.displayName = $better`,
+            { key, sessionId, better }
+          );
+        }
       }
     });
   } finally {
@@ -67,32 +103,34 @@ export async function ingestExtraction(
 }
 
 export interface GraphMatch {
-  entity: string;
+  entity: string;       // displayName, présenté à l'utilisateur / au LLM
   type: string;
-  relatedFacts: string[]; // phrases reconstituées "A RELATION B"
+  relatedFacts: string[];
   sources: string[];
 }
 
-/**
- * Recherche dans le graphe les entités correspondant aux noms fournis,
- * et remonte leurs relations directes (1 saut) pour construire le contexte.
- */
 export async function queryGraph(
   entityNames: string[],
   sessionId: string
 ): Promise<GraphMatch[]> {
   if (entityNames.length === 0) return [];
 
+  const keys = entityNames
+    .map((n) => normalizeEntityName(n).key)
+    .filter((k) => k.length > 0);
+
+  if (keys.length === 0) return [];
+
   const session: Session = getDriver().session();
   try {
     const result = await session.executeRead((tx) =>
       tx.run(
         `MATCH (e:Entity { sessionId: $sessionId })
-         WHERE toLower(e.name) IN $names
+         WHERE e.key IN $keys
          OPTIONAL MATCH (e)-[r]-(related:Entity { sessionId: $sessionId })
-         RETURN e.name AS name, e.type AS type, e.sources AS sources,
-                collect(DISTINCT { relType: type(r), relatedName: related.name }) AS relations`,
-        { sessionId, names: entityNames.map((n) => n.toLowerCase()) }
+         RETURN e.displayName AS name, e.type AS type, e.sources AS sources,
+                collect(DISTINCT { relType: type(r), relatedName: related.displayName }) AS relations`,
+        { sessionId, keys }
       )
     );
 
