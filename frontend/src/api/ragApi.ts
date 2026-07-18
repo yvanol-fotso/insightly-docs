@@ -55,14 +55,15 @@ export async function uploadFiles(
 
 export async function askQuestion(
   question: string,
-  sessionId: string
+  sessionId: string,
+  ragStrategy?: "naive" | "graph"
 ): Promise<AskResult> {
   try {
     const { data } = await api.post<AskResult>("/chat", {
       question,
       sessionId,
+      ragStrategy,
     });
-
     return data;
   } catch (error: any) {
     throw new Error(

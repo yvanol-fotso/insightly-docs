@@ -39,7 +39,6 @@ export default function ChatBox({ sessionId, initialMessages = [], onDocumentsIn
 
   const handleAttachClick = () => fileInputRef.current?.click();
 
-  // Upload immédiat dès qu'on choisit un ou plusieurs PDF.
   const handleFilesSelected = async (fileList: FileList | null) => {
     if (!fileList) return;
     const incoming = Array.from(fileList).filter((f) => f.type === "application/pdf");
@@ -121,10 +120,10 @@ export default function ChatBox({ sessionId, initialMessages = [], onDocumentsIn
       <div className="chat__messages" ref={scrollRef}>
         {messages.length === 0 && (
           <div className="chat__empty-state">
-            <h2>Posez une question sur vos documents</h2>
+            <h2>Vos documents, enfin faciles à interroger</h2>
             <p>
-              Ajoutez jusqu'a {MAX_FILES} PDF ({MAX_PAGES} pages cumulees max) avec le bouton "+", puis interrogez-les
-              directement dans la conversation.
+              Ajoutez jusqu'à {MAX_FILES} PDF ({MAX_PAGES} pages cumulées max), et Insightly Docs répond à vos
+              questions en citant précisément les passages concernés.
             </p>
           </div>
         )}

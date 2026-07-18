@@ -41,6 +41,22 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+:root[data-theme="light"] {
+  --bg: #f7f7f9;
+  --bg-elevated: #ffffff;
+  --panel: #ffffff;
+  --panel-hover: #f0f0f3;
+  --border: #e2e2e8;
+  --border-subtle: #ebebef;
+
+  --text: #1a1b1f;
+  --text-muted: #55565f;
+  --text-faint: #9596a1;
+
+  --accent-bg: rgba(139, 107, 240, 0.08);
+  --danger-bg: rgba(240, 102, 90, 0.08);
+}
+
 * {
   box-sizing: border-box;
 }

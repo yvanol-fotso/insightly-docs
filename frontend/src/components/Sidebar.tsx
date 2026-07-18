@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { listSessions } from "../api/ragApi";
 import { FileIcon, MenuIcon, NewChatIcon, TrashIcon } from "./Icons";
+import UserMenu from "./UserMenu";
 
 export interface DocumentEntry {
   filename: string;
@@ -13,6 +14,9 @@ interface ConversationEntry {
   last_activity: string;
 }
 
+type Plan = "Starter" | "Pro" | "Scale";
+type RagMode = "naive" | "graph";
+
 interface SidebarProps {
   documents: DocumentEntry[];
   isOpen: boolean;
@@ -21,7 +25,11 @@ interface SidebarProps {
   onNewSession: () => void;
   onRemoveDocument: (filename: string) => void;
   onSelectSession: (sessionId: string) => void;
-  refreshKey: number; // new  pour forcer un rechargement de la liste apres une nouvelle question
+  onUpgradeClick: () => void;
+  refreshKey: number;
+  currentPlan: Plan;
+  ragMode: RagMode;
+  onRagModeChange: (mode: RagMode) => void;
 }
 
 export default function Sidebar({
@@ -32,7 +40,11 @@ export default function Sidebar({
   onNewSession,
   onRemoveDocument,
   onSelectSession,
+  onUpgradeClick,
   refreshKey,
+  currentPlan,
+  ragMode,
+  onRagModeChange,
 }: SidebarProps) {
   const [conversations, setConversations] = useState<ConversationEntry[]>([]);
 
@@ -48,7 +60,7 @@ export default function Sidebar({
 
       <aside className={`sidebar ${isOpen ? "sidebar--open" : "sidebar--collapsed"}`}>
         <div className="sidebar__header">
-          <span className="sidebar__title">Assistant documentaire</span>
+          <span className="sidebar__title">Insightly Docs</span>
           <button className="icon-button sidebar__collapse" onClick={onToggle} aria-label="Masquer la barre laterale">
             <MenuIcon />
           </button>
@@ -62,7 +74,9 @@ export default function Sidebar({
         <div className="sidebar__section-label">Conversations</div>
         <div className="sidebar__documents">
           {conversations.length === 0 && (
-            <p className="sidebar__empty">Aucune conversation pour l'instant.</p>
+            <p className="sidebar__empty">
+              Vos conversations apparaîtront ici après votre première question.
+            </p>
           )}
           {conversations.map((conv) => (
             <div
@@ -84,7 +98,9 @@ export default function Sidebar({
         <div className="sidebar__section-label">Documents indexes (conversation actuelle)</div>
         <div className="sidebar__documents">
           {documents.length === 0 && (
-            <p className="sidebar__empty">Aucun document pour l'instant.</p>
+            <p className="sidebar__empty">
+              Ajoutez un PDF pour commencer — Insightly Docs l'analyse et en extrait les informations clés.
+            </p>
           )}
           {documents.map((doc) => (
             <div className="document-item" key={doc.filename}>
@@ -103,6 +119,13 @@ export default function Sidebar({
             </div>
           ))}
         </div>
+
+        <UserMenu
+          planName={currentPlan}
+          ragMode={ragMode}
+          onRagModeChange={onRagModeChange}
+          onUpgradeClick={onUpgradeClick}
+        />
       </aside>
     </>
   );
