@@ -3,6 +3,8 @@ import { askQuestion, uploadFiles } from "../api/ragApi";
 import { CloseIcon, FileIcon, PlusIcon, SendIcon } from "./Icons";
 import type { DocumentEntry } from "./Sidebar";
 import IndexingProgress from "./IndexingProgress";
+import { useToast } from "./Toast";
+import { Network, Search } from "lucide-react";
 
 interface Message {
   role: "user" | "assistant";
@@ -41,10 +43,26 @@ export default function ChatBox({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const { showToast } = useToast();
+  const isFirstRender = useRef(true);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, isSending]);
+
+  // Notifie le changement de mode RAG par un toast, sans notifier au tout premier rendu.
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+
+    if (ragMode === "graph") {
+      showToast("Mode Graphe activé", { variant: "info", icon: <Network size={18} /> });
+    } else {
+      showToast("Mode recherche standard activé", { variant: "info", icon: <Search size={18} /> });
+    }
+  }, [ragMode, showToast]);
 
   const handleAttachClick = () => fileInputRef.current?.click();
 
@@ -72,11 +90,14 @@ export default function ChatBox({
         setShowIndexingProgress(true);
       }
 
+      showToast(`${result.files.length} document(s) indexé(s) avec succès`, { variant: "success" });
+
       setPendingFiles([]);
     } catch (err) {
       console.error(err);
       const message = err instanceof Error ? err.message : "L'indexation des documents a echoue.";
       setUploadError(message);
+      showToast(message, { variant: "error" });
     } finally {
       setIsUploading(false);
     }
@@ -103,6 +124,7 @@ export default function ChatBox({
       console.error(err);
       const message = err instanceof Error ? err.message : "Une erreur est survenue pendant la generation de la reponse.";
       setMessages((prev) => [...prev, { role: "assistant", content: message }]);
+      showToast(message, { variant: "error" });
     } finally {
       setIsSending(false);
     }
@@ -126,10 +148,6 @@ export default function ChatBox({
 
   return (
     <div className="chat">
-      <div className="chat__mode-badge">
-        {ragMode === "graph" ? "🕸️ Mode Graphe activé" : "🔍 Mode recherche standard"}
-      </div>
-
       <div className="chat__messages" ref={scrollRef}>
         {messages.length === 0 && (
           <div className="chat__empty-state">
