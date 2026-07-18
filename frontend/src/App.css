@@ -722,19 +722,21 @@
 
 .plans-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 260px));
+  justify-content: center;
   gap: 16px;
   padding: 24px;
 }
 
 .plan-card {
   position: relative;
-  padding: 24px;
+  padding: 22px;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 
 .plan-card--recommended {
@@ -858,7 +860,7 @@
 }
 
 .billing-page .plans-grid {
-  max-width: 900px;
+  max-width: 860px;
   margin: 0 auto;
   padding: 0;
 }
@@ -942,6 +944,7 @@
 }
 
 
+
 .user-menu__toggle-row {
   display: flex;
   align-items: center;
@@ -1006,4 +1009,10 @@
   z-index: 5;
   background: var(--panel);
   border: 1px solid var(--border);
+}
+
+@media (max-width: 768px) {
+  .plans-grid {
+    grid-template-columns: minmax(0, 320px);
+  }
 }
