@@ -10,8 +10,11 @@ interface Message {
   sources?: { filename: string; score: number }[];
 }
 
+type RagMode = "naive" | "graph";
+
 interface ChatBoxProps {
   sessionId: string;
+  ragMode: RagMode;
   initialMessages?: Message[];
   onDocumentsIndexed: (documents: DocumentEntry[]) => void;
   onMessageSent?: () => void;
@@ -20,7 +23,13 @@ interface ChatBoxProps {
 const MAX_FILES = 5;
 const MAX_PAGES = 500;
 
-export default function ChatBox({ sessionId, initialMessages = [], onDocumentsIndexed, onMessageSent }: ChatBoxProps) {
+export default function ChatBox({
+  sessionId,
+  ragMode,
+  initialMessages = [],
+  onDocumentsIndexed,
+  onMessageSent,
+}: ChatBoxProps) {
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [input, setInput] = useState("");
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
@@ -87,7 +96,7 @@ export default function ChatBox({ sessionId, initialMessages = [], onDocumentsIn
     setIsSending(true);
 
     try {
-      const result = await askQuestion(question, sessionId);
+      const result = await askQuestion(question, sessionId, ragMode);
       setMessages((prev) => [...prev, { role: "assistant", content: result.answer, sources: result.sources }]);
       onMessageSent?.();
     } catch (err) {
@@ -117,6 +126,10 @@ export default function ChatBox({ sessionId, initialMessages = [], onDocumentsIn
 
   return (
     <div className="chat">
+      <div className="chat__mode-badge">
+        {ragMode === "graph" ? "🕸️ Mode Graphe activé" : "🔍 Mode recherche standard"}
+      </div>
+
       <div className="chat__messages" ref={scrollRef}>
         {messages.length === 0 && (
           <div className="chat__empty-state">
