@@ -2,7 +2,7 @@
 
 Assistant documentaire intelligent permettant d'uploader des documents PDF et de les interroger en langage naturel, avec deux moteurs de recherche interchangeables : un **RAG vectoriel classique (Naive)** et un **RAG par graphe de connaissances (GraphRAG)**.
 
-## 🌐 Démo en ligne
+##  Démo en ligne
 
 - **Frontend** : [https://poc-chatbot-rag.vercel.app](https://poc-chatbot-rag.vercel.app)
 - **Backend (API)** : [https://poc-chatbot-rag.onrender.com](https://poc-chatbot-rag.onrender.com)
