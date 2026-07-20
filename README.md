@@ -266,4 +266,5 @@ curl http://localhost:3000/api/sessions/session-test
 ![Capture 2](Screenshots/2.png)
 ![Capture 3](Screenshots/3.png)
 ![Capture 4](Screenshots/4.png)
-![Capture 5](Screenshots/5.png)
+![Capture 6](Screenshots/6.png)
+![Capture 7](Screenshots/7.png)
