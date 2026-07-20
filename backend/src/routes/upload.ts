@@ -76,10 +76,21 @@ router.post("/upload", upload.array("files", MAX_FILES), async (req, res) => {
         });
       }
 
-      // le vector store reste synchrone : c'est rapide (pas d'appel LLM), pas besoin de file d'attente ici
-      await addToStore(chunksWithEmbeddings);
+      // On indexe toujours le vector store, pour permettre à l'utilisateur de basculer
+      // librement entre mode Naive et mode Graph sans avoir à réuploader le document.
+      // Un échec ici (ex: Chroma non lancé) ne doit pas empêcher l'ingestion graphe.
+      let vectorStoreIndexed = true;
+      try {
+        await addToStore(chunksWithEmbeddings);
+      } catch (vectorStoreError) {
+        vectorStoreIndexed = false;
+        console.error(
+          `Échec de l'indexation vectorielle pour ${file.filename} (le mode Naive ne fonctionnera pas pour ce document tant que ce n'est pas corrigé) :`,
+          vectorStoreError
+        );
+      }
 
-      // l'ingestion graphe, elle, part en arrière-plan
+      // L'ingestion graphe part en arrière-plan, indépendamment du résultat du vector store.
       let jobId: number | null = null;
       if (useGraph) {
         jobId = await createJob(sessionId, file.filename, chunksWithEmbeddings.length);
@@ -100,15 +111,29 @@ router.post("/upload", upload.array("files", MAX_FILES), async (req, res) => {
         filename: file.filename,
         totalChunks: chunks.length,
         graphJobId: jobId,
+        vectorStoreIndexed,
       });
     }
 
+    const anyVectorStoreFailure = results.some((r) => !r.vectorStoreIndexed);
+
+    let totalStored: number | null = null;
+    try {
+      totalStored = await getStoreSize();
+    } catch {
+      // le vector store peut être indisponible ; on ne bloque pas la réponse pour autant
+      totalStored = null;
+    }
+
     res.json({
-      message: `${files.length} fichier(s) traité(s) et indexé(s) avec succès`,
+      message: anyVectorStoreFailure
+        ? `${files.length} fichier(s) traité(s) — indexation graphe lancée, mais le stockage vectoriel a échoué pour un ou plusieurs fichiers (mode Naive indisponible pour ceux-ci)`
+        : `${files.length} fichier(s) traité(s) et indexé(s) avec succès`,
       totalPages,
       files: results,
-      totalStored: await getStoreSize(),
+      totalStored,
       graphIngestion: useGraph,
+      vectorStoreWarning: anyVectorStoreFailure,
     });
   } catch (error) {
     console.error(error);
