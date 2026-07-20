@@ -1,7 +1,7 @@
 import Groq from "groq-sdk";
 import { askLLM } from "../llm";
 import { getHistory } from "../conversationStore";
-import { queryGraph } from "./graphStore";
+import { queryGraph, getDriver } from "./graphStore";
 import { RagResult } from "./types";
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
@@ -33,10 +33,67 @@ Réponds STRICTEMENT en JSON : { "entities": ["string", ...] }, sans texte autou
   }
 }
 
+interface CommunityMatch {
+  summary: string;
+  memberCount: number;
+}
+
+async function queryCommunitySummaries(sessionId: string): Promise<CommunityMatch[]> {
+  const session = getDriver().session();
+  try {
+    const result = await session.executeRead((tx) =>
+      tx.run(
+        `MATCH (c:Community { sessionId: $sessionId })
+         RETURN c.summary AS summary, c.memberCount AS memberCount
+         ORDER BY c.memberCount DESC
+         LIMIT 5`,
+        { sessionId }
+      )
+    );
+    return result.records.map((r) => ({
+      summary: r.get("summary"),
+      memberCount: r.get("memberCount"),
+    }));
+  } finally {
+    await session.close();
+  }
+}
+
+const GLOBAL_QUESTION_KEYWORDS = [
+  "thèmes", "thème", "résume", "résumé", "en général", "dans l'ensemble",
+  "globalement", "de quoi parle", "sujet principal",
+];
+
+function isGlobalQuestion(question: string): boolean {
+  const normalized = question.toLowerCase();
+  return GLOBAL_QUESTION_KEYWORDS.some((kw) => normalized.includes(kw));
+}
+
 export async function askGraphRag(
   question: string,
   sessionId: string
 ): Promise<RagResult> {
+  // Questions globales ("quels sont les thèmes...") : on interroge d'abord les résumés
+  // de communautés, plus adaptés qu'une recherche par entité isolée.
+  if (isGlobalQuestion(question)) {
+    const communities = await queryCommunitySummaries(sessionId);
+
+    if (communities.length > 0) {
+      const context = communities
+        .map((c, i) => `Thème ${i + 1} (${c.memberCount} entités liées) :\n${c.summary}`)
+        .join("\n\n---\n\n");
+
+      const history = await getHistory(sessionId);
+      const answer = await askLLM(question, context, history);
+
+      return {
+        answer,
+        sources: [], // les résumés de communauté ne sont pas rattachés à un fichier unique
+      };
+    }
+    // si aucune communauté détectée, on retombe sur la recherche par entités classique ci-dessous
+  }
+
   const entityNames = await extractQuestionEntities(question);
 
   if (entityNames.length === 0) {

@@ -3,6 +3,7 @@ import { connection } from "./redis";
 import { GraphIngestionJobData } from "./graphQueue";
 import { extractEntitiesAndRelationsBatched } from "../services/rag/graphExtraction";
 import { ingestExtraction } from "../services/rag/graphStore";
+import { runCommunityDetection } from "../services/rag/communityDetection";
 import {
   markProcessing,
   incrementProgress,
@@ -39,6 +40,11 @@ export function startGraphWorker() {
 
       await markCompleted(jobId);
       console.log(`[graph-worker] Indexation graphe terminée : ${filename}`);
+
+      // Détection de communautés en arrière-plan, ne bloque pas la réponse du job principal
+      runCommunityDetection(sessionId).catch((err) =>
+        console.error(`[graph-worker] Échec de la détection de communautés pour ${filename} :`, err)
+      );
     },
     {
       connection,

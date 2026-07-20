@@ -15,10 +15,10 @@ export interface ExtractionResult {
   relations: ValidatedRelation[];
 }
 
-// Nombre de chunks regroupés par appel LLM.
-// Un batch trop grand risque de dépasser la fenêtre de contexte du modèle
-// ou de dégrader la qualité d'extraction (le LLM "dilue" son attention).
-const BATCH_SIZE = 5;
+// Budget de tokens approximatif par batch (estimation grossière : ~4 caractères = 1 token).
+// On vise large sous la limite de tokens/minute de Groq pour limiter les 429 par rafale.
+const TOKEN_BUDGET_PER_BATCH = 2500;
+const MAX_CHUNKS_PER_BATCH = 8; // garde-fou, même si le budget tokens le permettrait
 
 const EXTRACTION_SYSTEM_PROMPT = `Tu es un moteur d'extraction d'entités et de relations pour un graphe de connaissances.
 
@@ -109,25 +109,50 @@ function filterValidItemsManually(rawParsed: unknown): ExtractionResult {
   return { entities, relations };
 }
 
+function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4);
+}
+
 /**
- * Découpe une liste de chunks en groupes de BATCH_SIZE.
+ * Regroupe les chunks par budget de tokens plutôt que par nombre fixe :
+ * un batch de chunks courts en contiendra plus, un batch de chunks longs en contiendra moins.
+ * Réduit le gaspillage et stabilise la taille réelle des requêtes envoyées à Groq.
  */
-function chunkArray<T>(items: T[], size: number): T[][] {
-  const batches: T[][] = [];
-  for (let i = 0; i < items.length; i += size) {
-    batches.push(items.slice(i, i + size));
+function batchByTokenBudget(chunks: string[]): string[][] {
+  const batches: string[][] = [];
+  let current: string[] = [];
+  let currentTokens = 0;
+
+  for (const chunk of chunks) {
+    const chunkTokens = estimateTokens(chunk);
+
+    const wouldExceed =
+      currentTokens + chunkTokens > TOKEN_BUDGET_PER_BATCH || current.length >= MAX_CHUNKS_PER_BATCH;
+
+    if (wouldExceed && current.length > 0) {
+      batches.push(current);
+      current = [];
+      currentTokens = 0;
+    }
+
+    current.push(chunk);
+    currentTokens += chunkTokens;
   }
+
+  if (current.length > 0) batches.push(current);
+
   return batches;
 }
 
 /**
  * Point d'entrée public : extrait les entités/relations pour TOUS les chunks fournis,
- * en les regroupant par batchs pour limiter le nombre d'appels LLM.
+ * en les regroupant par budget de tokens pour limiter le nombre d'appels LLM
+ * et éviter les batchs disproportionnés en taille.
  */
 export async function extractEntitiesAndRelationsBatched(
   chunkContents: string[]
 ): Promise<ExtractionResult> {
-  const batches = chunkArray(chunkContents, BATCH_SIZE);
+  const batches = batchByTokenBudget(chunkContents);
   const allEntities: ValidatedEntity[] = [];
   const allRelations: ValidatedRelation[] = [];
 
