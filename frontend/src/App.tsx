@@ -22,7 +22,7 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [view, setView] = useState<View>("chat");
 
-  // Placeholders en attendant la vraie logique d'auth/abonnement
+  // je use un placeholder pour la vraie logique d'auth/abonnement
   const [currentPlan, setCurrentPlan] = useState<Plan>("Starter");
   const [ragMode, setRagMode] = useState<RagMode>("naive");
 
@@ -52,7 +52,7 @@ export default function App() {
   };
 
   const handleSelectPlan = (plan: Plan) => {
-    // TODO : brancher Stripe Checkout ici à la phase billing
+    // New TODO : brancher Stripe Checkout ici à la phase billing
     setCurrentPlan(plan);
     setView("chat");
   };
