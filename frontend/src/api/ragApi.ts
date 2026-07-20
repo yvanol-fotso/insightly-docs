@@ -112,7 +112,7 @@ export interface IndexingJob {
   id: number;
   session_id: string;
   filename: string;
-  status: "pending" | "processing" | "completed" | "failed";
+  status: "pending" | "processing" | "completed" | "completed_with_errors" | "failed";
   total_chunks: number;
   processed_chunks: number;
   failed_chunks: number;

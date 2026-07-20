@@ -1,6 +1,6 @@
 import { pool } from "./db";
 
-export type JobStatus = "pending" | "processing" | "completed" | "failed";
+export type JobStatus = "pending" | "processing" | "completed" | "completed_with_errors" | "failed";
 
 export interface IndexingJob {
   id: number;
@@ -44,10 +44,22 @@ export async function incrementProgress(jobId: number, failed = false) {
   );
 }
 
+/**
+ * Marque le job comme terminé. Le statut final dépend du nombre de chunks échoués :
+ * - "completed" si tout s'est bien passé
+ * - "completed_with_errors" si au moins un chunk a échoué (le graphe est alors partiel)
+ */
 export async function markCompleted(jobId: number) {
-  await pool.query(
-    `UPDATE indexing_jobs SET status = 'completed', updated_at = NOW() WHERE id = $1`,
+  const result = await pool.query(
+    `SELECT failed_chunks FROM indexing_jobs WHERE id = $1`,
     [jobId]
+  );
+  const failedChunks = result.rows[0]?.failed_chunks ?? 0;
+  const finalStatus: JobStatus = failedChunks > 0 ? "completed_with_errors" : "completed";
+
+  await pool.query(
+    `UPDATE indexing_jobs SET status = $2, updated_at = NOW() WHERE id = $1`,
+    [jobId, finalStatus]
   );
 }
 

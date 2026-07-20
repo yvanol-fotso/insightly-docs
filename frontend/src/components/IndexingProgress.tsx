@@ -46,6 +46,7 @@ export default function IndexingProgress({ sessionId, onAllCompleted }: Indexing
   }, [sessionId, onAllCompleted]);
 
   const activeJobs = jobs.filter((j) => j.status === "pending" || j.status === "processing");
+  const partialJobs = jobs.filter((j) => j.status === "completed_with_errors");
   const failedJobs = jobs.filter((j) => j.status === "failed");
 
   if (jobs.length === 0) return null;
@@ -73,6 +74,27 @@ export default function IndexingProgress({ sessionId, onAllCompleted }: Indexing
                 <span className="indexing-progress__warning"> · {job.failed_chunks} échec(s)</span>
               )}
             </div>
+          </div>
+        );
+      })}
+
+      {partialJobs.map((job) => {
+        const successRate = Math.round(
+          ((job.total_chunks - job.failed_chunks) / job.total_chunks) * 100
+        );
+
+        return (
+          <div key={job.id} className="indexing-progress__partial">
+            <div className="indexing-progress__partial-header">
+              <span>Indexation partielle - {job.filename}</span>
+            </div>
+            <p className="indexing-progress__partial-text">
+              {job.total_chunks - job.failed_chunks} / {job.total_chunks} extraits indexés avec succès
+              ({successRate}%). {job.failed_chunks} extrait(s) n'ont pas pu être traités, généralement en
+              raison d'une limite de requêtes atteinte auprès du fournisseur LLM. Le graphe de connaissances
+              pour ce document est donc incomplet — les réponses peuvent ne pas couvrir l'intégralité du
+              contenu.
+            </p>
           </div>
         );
       })}

@@ -1083,3 +1083,25 @@
 .toast__close:hover {
   color: var(--text);
 }
+
+
+.indexing-progress__partial {
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.indexing-progress__partial-header {
+  font-size: 13px;
+  font-weight: 500;
+  color: #f59e0b;
+  margin-bottom: 6px;
+}
+
+.indexing-progress__partial-text {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.6;
+  margin: 0;
+}
