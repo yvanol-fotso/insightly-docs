@@ -43,10 +43,15 @@ L'ingestion GraphRAG est bâtie comme un pipeline robuste, pas un prototype : ch
 3. **Validation de schéma (Zod)** — tout JSON retourné par le LLM est validé avant d'atteindre Neo4j ; une entité individuellement invalide est filtrée sans faire échouer tout le chunk.
 4. **Normalisation des entités** — les noms sont fusionnés par une clé normalisée (minuscules, sans accents, sans article), pour éviter que "Réducteur" / "réducteur" / "le réducteur" ne créent des nœuds distincts, tout en conservant un nom d'affichage propre.
 5. **Batching des chunks** — plusieurs chunks sont regroupés par appel LLM (au lieu d'un appel par chunk), ce qui réduit le nombre de requêtes d'environ 80 % pour un document typique.
-6. **Statut d'indexation visible** — le frontend affiche une barre de progression en temps réel pendant l'indexation graphe, avec remontée claire des échecs éventuels.
+6. **Statut d'indexation visible** — le frontend affiche une barre de progression en temps réel pendant l'indexation graphe, avec remontée claire des échecs éventuels (statut `completed_with_errors` si des chunks ont échoué, ex: limite de quota LLM atteinte).
+7. **Batching par budget de tokens** — les chunks sont regroupés par estimation de taille (et non plus par nombre fixe), pour mieux calibrer chaque appel LLM et réduire le risque de dépassement de limite par minute.
 
-### Chantier à venir : détection de communautés
-Une fois le graphe construit, l'étape suivante consiste à appliquer un algorithme de clustering (type Leiden) pour regrouper les entités en communautés thématiques et générer un résumé par communauté — ce qui permettra de répondre à des questions globales ("quels sont les grands thèmes de ce document ?"), pas uniquement des questions ciblées sur une entité précise. Cette fonctionnalité n'est pas encore implémentée.
+### Détection de communautés
+Une fois le graphe construit, un algorithme de clustering ([Louvain](https://github.com/graphology/graphology-communities-louvain)) regroupe les entités en communautés thématiques. Pour chaque communauté significative (3 entités liées ou plus), un résumé est généré par le LLM et stocké dans Neo4j (nœuds `:Community`, reliés à leurs entités membres via `HAS_MEMBER`).
+
+Les questions globales ("quels sont les grands thèmes de ce document ?", "de quoi ça parle en général ?") sont automatiquement détectées et redirigées vers ces résumés de communautés, plutôt que vers une recherche par entité isolée — ce qui permet de répondre à des questions qui portent sur l'ensemble d'un document, pas uniquement sur un concept précis.
+
+Cette étape se déclenche automatiquement en arrière-plan à la fin de chaque indexation graphe, sans bloquer le reste du traitement.
 
 ## Prérequis
 
