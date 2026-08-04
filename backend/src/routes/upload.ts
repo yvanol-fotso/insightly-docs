@@ -1,15 +1,10 @@
 import { Router } from "express";
 import multer from "multer";
 import path from "path";
-import { extractTextFromPDF } from "../services/pdfLoader";
-import { chunkText } from "../services/chunker";
-import { embedText } from "../services/embeddings";
-import { addToStore, getStoreSize } from "../services/vectorStore";
-import { createJob } from "../services/jobStore";
-import { enqueueGraphIngestion } from "../queue/graphQueue";
-import { pool } from "../services/db";
-import pdfParse from "pdf-parse";
 import fs from "fs";
+import pdfParse from "pdf-parse";
+import { createJob } from "../services/jobStore";
+import { enqueueDocumentIngestion } from "../queue/documentQueue";
 
 const router = Router();
 
@@ -39,6 +34,8 @@ router.post("/upload", upload.array("files", MAX_FILES), async (req, res) => {
   }
 
   try {
+    // Vérification rapide du nombre de pages. On utilise pdf-parse seul ici (sans passer par extractTextFromPDF/OCR) : même sur un PDF scanné, ça reste
+    // rapide car on ne lit que les métadonnées/texte natif jamais l'OCR cloud.
     let totalPages = 0;
     const pageCounts: { filename: string; pages: number }[] = [];
 
@@ -56,84 +53,29 @@ router.post("/upload", upload.array("files", MAX_FILES), async (req, res) => {
       });
     }
 
-    const results = [];
     const useGraph = process.env.RAG_STRATEGY === "graph";
 
+    // Le reste du traitement (extraction/OCR chunking, embeddings  vector store,
+    // puis ingestion graphe) part en arrière-plan via document-worker on répond tout de suite pour éviter qu'un PDF scanné (OCR potentiellement long) ne bloque la requête HTTP d'upload.
+    const results = [];
     for (const file of files) {
-      const text = await extractTextFromPDF(file.path);
-      const chunks = chunkText(text);
-
-      console.log(`Génération des embeddings pour ${file.filename} (${chunks.length} chunks)...`);
-
-      const chunksWithEmbeddings = [];
-      for (const chunk of chunks) {
-        const embedding = await embedText(chunk.content);
-        chunksWithEmbeddings.push({
-          ...chunk,
-          embedding,
-          filename: file.filename,
-          sessionId,
-        });
-      }
-
-      // On indexe toujours le vector store, pour permettre à l'utilisateur de basculer
-      // librement entre mode Naive et mode Graph sans avoir à réuploader le document.
-      // Un échec ici (ex: Chroma non lancé) ne doit pas empêcher l'ingestion graphe.
-      let vectorStoreIndexed = true;
-      try {
-        await addToStore(chunksWithEmbeddings);
-      } catch (vectorStoreError) {
-        vectorStoreIndexed = false;
-        console.error(
-          `Échec de l'indexation vectorielle pour ${file.filename} (le mode Naive ne fonctionnera pas pour ce document tant que ce n'est pas corrigé) :`,
-          vectorStoreError
-        );
-      }
-
-      // L'ingestion graphe part en arrière-plan, indépendamment du résultat du vector store.
-      let jobId: number | null = null;
-      if (useGraph) {
-        jobId = await createJob(sessionId, file.filename, chunksWithEmbeddings.length);
-        await enqueueGraphIngestion({
-          jobId,
-          sessionId,
-          filename: file.filename,
-          chunks: chunksWithEmbeddings.map((c) => ({ content: c.content })),
-        });
-      }
-
-      await pool.query(
-        `INSERT INTO documents (session_id, filename, chunks) VALUES ($1, $2, $3)`,
-        [sessionId, file.filename, chunks.length]
-      );
-
-      results.push({
+      const jobId = await createJob(sessionId, file.filename, 0, "document");
+      await enqueueDocumentIngestion({
+        jobId,
+        sessionId,
         filename: file.filename,
-        totalChunks: chunks.length,
-        graphJobId: jobId,
-        vectorStoreIndexed,
+        filePath: file.path,
+        useGraph,
       });
-    }
 
-    const anyVectorStoreFailure = results.some((r) => !r.vectorStoreIndexed);
-
-    let totalStored: number | null = null;
-    try {
-      totalStored = await getStoreSize();
-    } catch {
-      // le vector store peut être indisponible ; on ne bloque pas la réponse pour autant
-      totalStored = null;
+      results.push({ filename: file.filename, documentJobId: jobId });
     }
 
     res.json({
-      message: anyVectorStoreFailure
-        ? `${files.length} fichier(s) traité(s) — indexation graphe lancée, mais le stockage vectoriel a échoué pour un ou plusieurs fichiers (mode Naive indisponible pour ceux-ci)`
-        : `${files.length} fichier(s) traité(s) et indexé(s) avec succès`,
+      message: `${files.length} fichier(s) reçu(s), traitement en cours en arrière-plan`,
       totalPages,
       files: results,
-      totalStored,
       graphIngestion: useGraph,
-      vectorStoreWarning: anyVectorStoreFailure,
     });
   } catch (error) {
     console.error(error);

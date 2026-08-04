@@ -39,7 +39,7 @@ export async function initDb() {
       id SERIAL PRIMARY KEY,
       session_id TEXT NOT NULL,
       filename TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'pending', -- pending | processing | completed | failed
+      status TEXT NOT NULL DEFAULT 'pending', -- pending | processing | completed | completed_with_errors | failed
       total_chunks INTEGER NOT NULL DEFAULT 0,
       processed_chunks INTEGER NOT NULL DEFAULT 0,
       failed_chunks INTEGER NOT NULL DEFAULT 0,
@@ -51,6 +51,17 @@ export async function initDb() {
 
   await pool.query(`
     CREATE INDEX IF NOT EXISTS idx_indexing_jobs_session_id ON indexing_jobs(session_id);
+  `);
+
+  // Migration additive : distingue les jobs d'extraction/OCR ("document") des jobs
+  // d'ingestion graphe ("graph"), qui existaient seuls jusqu'ici. Le défaut 'graph'
+  // préserve le sens des lignes déjà en base, créées avant cette colonne.
+  await pool.query(`
+    ALTER TABLE indexing_jobs ADD COLUMN IF NOT EXISTS job_type TEXT NOT NULL DEFAULT 'graph';
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_indexing_jobs_job_type ON indexing_jobs(job_type);
   `);
 
   console.log("Base de données initialisée");

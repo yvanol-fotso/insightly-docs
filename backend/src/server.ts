@@ -8,6 +8,7 @@ import sessionsRoutes from "./routes/sessions";
 import cors from "cors";
 import { initDb } from "./services/db";
 import { startGraphWorker } from "./queue/graphWorker";
+import { startDocumentWorker } from "./queue/documentWorker";
 import indexingStatusRoutes from "./routes/indexingStatus";
 
 const app = express();
@@ -35,7 +36,11 @@ initDb()
       console.log(`Server running on http://localhost:${PORT}`);
     });
 
-    // le worker ne démarre que si on est en stratégie graphe
+    // Le document-worker démarre toujours : l'extraction/OCR, le chunking et les
+    // embeddings sont nécessaires quel que soit le mode RAG (Naive ou Graph).
+    startDocumentWorker();
+
+    // Le graph-worker, lui, ne démarre que si on est en stratégie graphe.
     if (process.env.RAG_STRATEGY === "graph") {
       startGraphWorker();
     }

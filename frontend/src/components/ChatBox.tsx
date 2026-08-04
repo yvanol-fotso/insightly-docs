@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { askQuestion, uploadFiles } from "../api/ragApi";
+import type { IndexingJob } from "../api/ragApi";
 import { CloseIcon, FileIcon, PlusIcon, SendIcon } from "./Icons";
 import type { DocumentEntry } from "./Sidebar";
 import IndexingProgress from "./IndexingProgress";
@@ -19,6 +20,7 @@ interface ChatBoxProps {
   ragMode: RagMode;
   initialMessages?: Message[];
   onDocumentsIndexed: (documents: DocumentEntry[]) => void;
+  onDocumentUpdated: (filename: string, update: Partial<DocumentEntry>) => void;
   onMessageSent?: () => void;
 }
 
@@ -30,6 +32,7 @@ export default function ChatBox({
   ragMode,
   initialMessages = [],
   onDocumentsIndexed,
+  onDocumentUpdated,
   onMessageSent,
 }: ChatBoxProps) {
   const [messages, setMessages] = useState<Message[]>(initialMessages);
@@ -79,27 +82,62 @@ export default function ChatBox({
 
     try {
       const result = await uploadFiles(combined, sessionId);
-      onDocumentsIndexed(
-        result.files.map((f) => ({
-          filename: f.filename,
-          chunks: f.totalChunks,
-        }))
-      );
 
-      if (result.graphIngestion) {
-        setShowIndexingProgress(true);
-      }
+      // Le traitementse fait désormais en arrière-plan : on ne connaît pas encore
+      // le nombre de chunks, on affiche donc chaque document en statut "processing"
+      // et on le mettra à jour dès que son job sera terminé (cf. handleDocumentJobSettled).
+      const placeholders: DocumentEntry[] = result.files.map((f) => ({
+        filename: f.filename,
+        chunks: 0,
+        status: "processing",
+      }));
+      onDocumentsIndexed(placeholders);
 
-      showToast(`${result.files.length} document(s) indexé(s) avec succès`, { variant: "success" });
+      setShowIndexingProgress(true);
+
+      showToast(`${result.files.length} document(s) reçu(s), traitement en cours...`, {
+        variant: "info",
+      });
 
       setPendingFiles([]);
     } catch (err) {
       console.error(err);
-      const message = err instanceof Error ? err.message : "L'indexation des documents a echoue.";
+      const message = err instanceof Error ? err.message : "L'envoi des documents a echoue.";
       setUploadError(message);
       showToast(message, { variant: "error" });
     } finally {
       setIsUploading(false);
+    }
+  };
+
+  // Appelé par IndexingProgress dès qu'un job "document" atteint un état terminal.
+  // C'est ici qu'on connaît enfin le nombre réel de chunks (ou l'échec), et qu'on
+  // met à jour l'entrée correspondante dans la Sidebar (sans la dupliquer).
+  const handleDocumentJobSettled = (job: IndexingJob) => {
+    if (job.status === "failed") {
+      onDocumentUpdated(job.filename, {
+        chunks: 0,
+        status: "failed",
+        errorMessage: job.error_message ?? undefined,
+      });
+      showToast(
+        `Échec du traitement de ${job.filename}${job.error_message ? " : " + job.error_message : ""}`,
+        { variant: "error" }
+      );
+      return;
+    }
+
+    const status = job.status === "completed_with_errors" ? "partial" : "ready";
+    onDocumentUpdated(job.filename, {
+      chunks: job.total_chunks,
+      status,
+      errorMessage: undefined,
+    });
+
+    if (status === "partial") {
+      showToast(`${job.filename} indexé partiellement (voir détails)`, { variant: "info" });
+    } else {
+      showToast(`${job.filename} indexé avec succès`, { variant: "success" });
     }
   };
 
@@ -207,6 +245,7 @@ export default function ChatBox({
         {showIndexingProgress && (
           <IndexingProgress
             sessionId={sessionId}
+            onDocumentJobSettled={handleDocumentJobSettled}
             onAllCompleted={() => {
               setTimeout(() => setShowIndexingProgress(false), 4000);
             }}
