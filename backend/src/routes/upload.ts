@@ -34,8 +34,7 @@ router.post("/upload", upload.array("files", MAX_FILES), async (req, res) => {
   }
 
   try {
-    // Vérification rapide du nombre de pages. On utilise pdf-parse seul ici (sans passer par extractTextFromPDF/OCR) : même sur un PDF scanné, ça reste
-    // rapide car on ne lit que les métadonnées/texte natif jamais l'OCR cloud.
+    // check le nombre de pages via les métadonnées PDF sans traitement OCR
     let totalPages = 0;
     const pageCounts: { filename: string; pages: number }[] = [];
 
@@ -55,8 +54,7 @@ router.post("/upload", upload.array("files", MAX_FILES), async (req, res) => {
 
     const useGraph = process.env.RAG_STRATEGY === "graph";
 
-    // Le reste du traitement (extraction/OCR chunking, embeddings  vector store,
-    // puis ingestion graphe) part en arrière-plan via document-worker on répond tout de suite pour éviter qu'un PDF scanné (OCR potentiellement long) ne bloque la requête HTTP d'upload.
+    // Extraction OCR embeddings et ingestion sont traités en arrière-plan après l'upload
     const results = [];
     for (const file of files) {
       const jobId = await createJob(sessionId, file.filename, 0, "document");

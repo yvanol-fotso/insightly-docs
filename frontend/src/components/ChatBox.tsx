@@ -83,9 +83,7 @@ export default function ChatBox({
     try {
       const result = await uploadFiles(combined, sessionId);
 
-      // Le traitementse fait désormais en arrière-plan : on ne connaît pas encore
-      // le nombre de chunks, on affiche donc chaque document en statut "processing"
-      // et on le mettra à jour dès que son job sera terminé (cf. handleDocumentJobSettled).
+      // Le traitement se fait en arrière-plan : le document est affiché en "processing" puis mis à jour à la fin du job
       const placeholders: DocumentEntry[] = result.files.map((f) => ({
         filename: f.filename,
         chunks: 0,
@@ -110,9 +108,7 @@ export default function ChatBox({
     }
   };
 
-  // Appelé par IndexingProgress dès qu'un job "document" atteint un état terminal.
-  // C'est ici qu'on connaît enfin le nombre réel de chunks (ou l'échec), et qu'on
-  // met à jour l'entrée correspondante dans la Sidebar (sans la dupliquer).
+// je met à jour le document dans la Sidebar à la fin d'un job "document".
   const handleDocumentJobSettled = (job: IndexingJob) => {
     if (job.status === "failed") {
       onDocumentUpdated(job.filename, {

@@ -5,9 +5,7 @@ import type { IndexingJob } from "../api/ragApi";
 interface IndexingProgressProps {
   sessionId: string;
   onAllCompleted?: () => void;
-  // Appelé une seule fois par job de type "document", dès qu'il atteint un état
-  // terminal (completed / completed_with_errors / failed). Permet au parent de
-  // rafraîchir le nombre réel de chunks une fois connu (pas disponible avant).
+// call a la fin d'un job "document" pour mettre à jour les informations finales
   onDocumentJobSettled?: (job: IndexingJob) => void;
 }
 
@@ -41,8 +39,7 @@ export default function IndexingProgress({
         if (cancelled) return;
         setJobs(result);
 
-        // new on notifie le parent pour chaque job "document" fraîchement terminé,
-        // une seule fois par job (grâce à settledJobIdsRef)
+        // notifie le parent à la fin de chaque job "document" (une seule fois)
         for (const job of result) {
           if (
             job.job_type === "document" &&

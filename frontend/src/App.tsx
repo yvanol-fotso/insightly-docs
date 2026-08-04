@@ -47,9 +47,7 @@ export default function App() {
     setRefreshKey((v) => v + 1);
   };
 
-  // Met à jour une entrée existante (par nom de fichier) plutôt que d'en ajouter
-  // une nouvelle : utilisé quand un job d'extraction/OCR se termine en arrière-plan
-  // et qu'on connaît enfin le nombre réel de chunks (ou le statut d'échec).
+// new on met a jour un fichier existant après la fin de l'extraction/OCR.
   const handleDocumentUpdated = (filename: string, update: Partial<DocumentEntry>) => {
     setDocuments((prev) =>
       prev.map((d) => (d.filename === filename ? { ...d, ...update } : d))

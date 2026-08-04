@@ -29,7 +29,7 @@ export function startDocumentWorker() {
         const text = await extractTextFromPDF(filePath);
         const chunks = chunkText(text);
 
-        // Le nombre total de chunks n'est connu qu'à cette étape contrairement à un job graphe où il est fourni dès la création
+        // Le nombre de chunks est calculé après traitement, contrairement aux jobs graphe.
         await setTotalChunks(jobId, chunks.length);
 
         console.log(
@@ -56,7 +56,7 @@ export function startDocumentWorker() {
           }
         }
 
-        // On indexe toujours le vector store pour permettre au user de basculer librement entre mode Naive et mode Graph sans avoir à réuploader le document Un échec ici ne doit pas empêcher l'ingestion graphe.
+       // Le vector store est toujours indexé  un échec n'empêche pas l'ingestion graphe
         try {
           await addToStore(chunksWithEmbeddings);
         } catch (vectorStoreError) {
@@ -71,7 +71,7 @@ export function startDocumentWorker() {
           [sessionId, filename, chunks.length]
         );
 
-        // L'ingestion graphe part dans sa propre queue et son propre job de suivi indépendamment du résultat du vector store ci dessus
+       // l'ingestion graphe utilise sa propre queue et son propre job, indépendamment du vector store
         if (useGraph) {
           const graphJobId = await createJob(
             sessionId,

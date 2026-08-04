@@ -2,7 +2,7 @@ import { rasterizePdfToImages } from "./pdfRasterizer";
 
 const VISION_ENDPOINT = "https://vision.googleapis.com/v1/images:annotate";
 
-// ew limite imposée par l'API Vision pour une requête images:annotate synchrone
+// new limite imposée par l'API Vision pour une requête images:annotate synchrone
 const MAX_IMAGES_PER_REQUEST = 16;
 
 // Nombre de tentatives en cas d'erreur transitoire (429 quota, 5xx serveur)
@@ -17,9 +17,7 @@ interface VisionAnnotateResponse {
 }
 
 /**
- * Appelle l'API Vision pour un lot d'images (<=16) avec retry/backoff
- * exponentiel sur les erreurs transitoires. Abandonne immédiatement sur
- * les erreurs définitives (ex: clé API invalide, requête malformée).
+ * traite un lot d'images avec retry sur erreurs temporaires et arrêt sur erreurs définitives.
  */
 async function callVisionWithRetry(
   images: string[],
@@ -62,13 +60,7 @@ async function callVisionWithRetry(
 }
 
 /**
- * Pipeline complet d'OCR cloud pour un PDF scanné : rasterise chaque page
- * en image, envoie par lots de 16 à l'API Vision, et recompose le texte
- * dans l'ordre des pages.
- *
- * Un garde-fou (OCR_MAX_PAGES) refuse le traitement des documents
- * anormalement longs, pour éviter un temps de traitement excessif ou une
- * facture imprévue sur un document mal identifié comme scan.
+ * Pipeline OCR complet : convertit les pages en images et extrait le texte.
  */
 export async function extractTextViaVisionOCR(pdfPath: string): Promise<string> {
   const apiKey = process.env.GOOGLE_VISION_API_KEY;

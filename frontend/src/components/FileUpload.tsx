@@ -20,8 +20,7 @@ export default function FileUpload({ sessionId, onUploaded }: Props) {
     setLoading(true);
     try {
       const result = await uploadFiles(files, sessionId);
-      // Le traitement (extraction/OCR, chunking, embeddings) se fait désormais en
-      // arrière-plan : on ne connaît pas encore le nombre de chunks à ce stade.
+      // Le le traitment  se fait en arrière-plan : le nombre de chunks n'est pas encore connu
       onUploaded(`${result.files.length} fichier(s) reçu(s), traitement en cours en arrière-plan`);
       setFiles([]);
     } catch (err) {

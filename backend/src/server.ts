@@ -36,8 +36,7 @@ initDb()
       console.log(`Server running on http://localhost:${PORT}`);
     });
 
-    // Le document-worker démarre toujours : l'extraction/OCR, le chunking et les
-    // embeddings sont nécessaires quel que soit le mode RAG (Naive ou Graph).
+   // new le traitement du document (OCR, chunking, embeddings) s'exécute quel que soit le mode RAG
     startDocumentWorker();
 
     // Le graph-worker, lui, ne démarre que si on est en stratégie graphe.

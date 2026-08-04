@@ -53,9 +53,7 @@ export async function initDb() {
     CREATE INDEX IF NOT EXISTS idx_indexing_jobs_session_id ON indexing_jobs(session_id);
   `);
 
-  // Migration additive : distingue les jobs d'extraction/OCR ("document") des jobs
-  // d'ingestion graphe ("graph"), qui existaient seuls jusqu'ici. Le défaut 'graph'
-  // préserve le sens des lignes déjà en base, créées avant cette colonne.
+// add le type de job pour distinguer l'extraction/OCR des jobs graph existants.
   await pool.query(`
     ALTER TABLE indexing_jobs ADD COLUMN IF NOT EXISTS job_type TEXT NOT NULL DEFAULT 'graph';
   `);
