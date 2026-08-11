@@ -21,6 +21,8 @@ Assistant documentaire intelligent permettant d'uploader des documents PDF et de
 | File d'attente | Redis local + [BullMQ](https://docs.bullmq.io/) | Redis managé (ex: Upstash) + BullMQ |
 | Base de données relationnelle | PostgreSQL local | [Neon](https://neon.tech) (PostgreSQL serverless, gratuit) |
 | LLM | Groq (`llama-3.3-70b-versatile`, gratuit) | Identique |
+| OCR (PDF scannés) | [Google Cloud Vision](https://cloud.google.com/vision) (fallback automatique) | Identique |
+| Rasterisation PDF→image | Poppler (`pdftoppm`, via `pdf-poppler`) | Identique (nécessite un déploiement Docker sur Render) |
 
 Le vector store bascule automatiquement entre Chroma (local) et Qdrant (production) selon la présence de `QDRANT_URL` — aucune modification de code nécessaire pour changer d'environnement.
 
@@ -34,24 +36,60 @@ Construit un **graphe de connaissances** (entités + relations) à partir des do
 
 Le choix du moteur se fait par requête (`ragStrategy: "naive" | "graph"`), avec repli sur la variable d'environnement `RAG_STRATEGY` si rien n'est précisé.
 
-## Le pipeline GraphRAG en détail — conçu pour la production
+## Le pipeline d'ingestion — conçu pour la production
 
-L'ingestion GraphRAG est bâtie comme un pipeline robuste, pas un prototype : chaque étape a été ajoutée pour résoudre un problème concret de fiabilité à l'échelle.
+L'ingestion d'un document se fait en deux étapes asynchrones distinctes, chacune avec sa propre file d'attente et son propre suivi de statut. L'upload répond **immédiatement**, quel que soit le contenu du document (y compris un PDF scanné nécessitant de l'OCR) :
 
-1. **File d'attente asynchrone** (BullMQ + Redis) — l'upload répond immédiatement ; l'extraction d'entités/relations tourne en arrière-plan, avec un statut consultable en temps réel (`processed_chunks / total_chunks`) via `GET /api/indexing-status/:sessionId`.
-2. **Rate limiting + backoff exponentiel** sur les appels Groq — concurrence plafonnée, retry automatique avec attente croissante en cas de `429`, abandon immédiat sur les erreurs définitives (pas de retry inutile).
-3. **Validation de schéma (Zod)** — tout JSON retourné par le LLM est validé avant d'atteindre Neo4j ; une entité individuellement invalide est filtrée sans faire échouer tout le chunk.
-4. **Normalisation des entités** — les noms sont fusionnés par une clé normalisée (minuscules, sans accents, sans article), pour éviter que "Réducteur" / "réducteur" / "le réducteur" ne créent des nœuds distincts, tout en conservant un nom d'affichage propre.
-5. **Batching des chunks** — plusieurs chunks sont regroupés par appel LLM (au lieu d'un appel par chunk), ce qui réduit le nombre de requêtes d'environ 80 % pour un document typique.
-6. **Statut d'indexation visible** — le frontend affiche une barre de progression en temps réel pendant l'indexation graphe, avec remontée claire des échecs éventuels (statut `completed_with_errors` si des chunks ont échoué, ex: limite de quota LLM atteinte).
-7. **Batching par budget de tokens** — les chunks sont regroupés par estimation de taille (et non plus par nombre fixe), pour mieux calibrer chaque appel LLM et réduire le risque de dépassement de limite par minute.
+```
+upload.ts (répond immédiatement, ne fait que la vérification du nombre de pages)
+    ↓ enqueue
+documentQueue → documentWorker.ts (extraction/OCR, chunking, embeddings, vector store)
+    ↓ enqueue (uniquement si mode Graph)
+graphQueue → graphWorker.ts (extraction d'entités/relations)
+    ↓ appel direct, sérialisé par session
+communityDetection.ts (Louvain + résumés de communautés)
+```
+
+Chaque étape a un statut consultable en temps réel via `GET /api/indexing-status/:sessionId`, distingué par un champ `job_type` (`"document"` ou `"graph"`) sur chaque job.
+
+### Étape 1 — Extraction du document (`document-worker`)
+
+1. **File d'attente asynchrone** (BullMQ + Redis) — l'upload ne fait qu'une vérification rapide du nombre de pages, puis enfile chaque fichier ; extraction, chunking et embeddings tournent en arrière-plan.
+2. **Extraction de texte avec bascule OCR automatique** — le texte natif du PDF est d'abord extrait (`pdf-parse`). Si le nombre moyen de caractères par page est en dessous d'un seuil (signe d'un PDF scanné sans couche de texte), le document est automatiquement rasterisé page par page puis envoyé à **Google Cloud Vision** (`DOCUMENT_TEXT_DETECTION`) pour l'OCR — voir la section dédiée ci-dessous.
+3. **Statut d'indexation visible** — le nombre total de chunks n'est connu qu'après extraction + découpage ; le job est mis à jour en conséquence (`total_chunks` initialement à 0, puis fixé dès que connu).
+4. Une fois les embeddings générés et le vector store alimenté, l'ingestion graphe est enfilée séparément si le mode Graph est actif.
+
+### Étape 2 — Ingestion graphe (`graph-worker`)
+
+1. **Rate limiting + backoff exponentiel** sur les appels Groq — concurrence plafonnée, retry automatique avec attente croissante en cas de `429`, abandon immédiat sur les erreurs définitives (pas de retry inutile).
+2. **Validation de schéma (Zod)** — tout JSON retourné par le LLM est validé avant d'atteindre Neo4j ; une entité individuellement invalide est filtrée sans faire échouer tout le chunk.
+3. **Normalisation des entités** — les noms sont fusionnés par une clé normalisée (minuscules, sans accents, sans article), pour éviter que "Réducteur" / "réducteur" / "le réducteur" ne créent des nœuds distincts, tout en conservant un nom d'affichage propre.
+4. **Batching des chunks par budget de tokens** — plusieurs chunks sont regroupés par appel LLM selon une estimation de taille (et non un nombre fixe), ce qui réduit le nombre de requêtes d'environ 80 % pour un document typique et limite le risque de dépassement de limite par minute.
+5. **Statut d'indexation visible** — remontée claire des échecs éventuels (statut `completed_with_errors` si des chunks ont échoué, ex: limite de quota LLM atteinte).
 
 ### Détection de communautés
+
 Une fois le graphe construit, un algorithme de clustering ([Louvain](https://github.com/graphology/graphology-communities-louvain)) regroupe les entités en communautés thématiques. Pour chaque communauté significative (3 entités liées ou plus), un résumé est généré par le LLM et stocké dans Neo4j (nœuds `:Community`, reliés à leurs entités membres via `HAS_MEMBER`).
 
 Les questions globales ("quels sont les grands thèmes de ce document ?", "de quoi ça parle en général ?") sont automatiquement détectées et redirigées vers ces résumés de communautés, plutôt que vers une recherche par entité isolée — ce qui permet de répondre à des questions qui portent sur l'ensemble d'un document, pas uniquement sur un concept précis.
 
-Cette étape se déclenche automatiquement en arrière-plan à la fin de chaque indexation graphe, sans bloquer le reste du traitement.
+Cette étape se déclenche automatiquement en arrière-plan à la fin de chaque indexation graphe (recalculée sur l'ensemble du graphe de la session à chaque nouveau document, les communautés précédentes étant nettoyées avant réécriture), et est sérialisée par session pour éviter toute exécution concurrente sur le même graphe.
+
+## OCR des documents scannés
+
+Certains PDF n'ont pas de couche de texte exploitable (documents scannés, photocopies). Dans ce cas, `pdf-parse` seul ne suffit pas : Insightly Docs bascule automatiquement sur un pipeline d'OCR cloud.
+
+**Fonctionnement :**
+1. Le texte natif est extrait via `pdf-parse`. Si la moyenne de caractères par page est trop faible, le document est considéré comme un scan.
+2. Chaque page est rasterisée en image PNG via **Poppler** (`pdftoppm`, appelé par `pdf-poppler`) — nécessaire car l'API Google Vision, en mode synchrone, ne traite pas un PDF multi-pages directement au-delà de 5 pages.
+3. Les images sont envoyées par lots de 16 à l'API **Google Cloud Vision** (`images:annotate`, feature `DOCUMENT_TEXT_DETECTION`), avec retry/backoff exponentiel sur les erreurs transitoires (429, 5xx).
+4. Le texte de chaque page est recomposé dans l'ordre, puis suit le pipeline normal (chunking, embeddings, etc.).
+
+**Garde-fous :**
+- `OCR_MAX_PAGES` (défaut : 30) refuse le traitement des documents scannés anormalement longs, pour éviter un temps de traitement excessif ou une facture imprévue.
+- Le quota gratuit de Google Cloud Vision couvre 1 000 pages/mois ; au-delà, facturation à l'usage (environ 1,50 $ pour 1 000 pages).
+
+**Pourquoi pas Tesseract.js (local, gratuit) ?** Retenu comme option, mais écarté au profit de Google Vision pour la fiabilité en production : Tesseract est lourd en CPU (risque de timeout sur les plans d'hébergement gratuits) et moins précis sur des documents de qualité variable, ce qui n'était pas acceptable pour un usage où les scans sont fréquents.
 
 ## Prérequis
 
@@ -63,6 +101,11 @@ Cette étape se déclenche automatiquement en arrière-plan à la fin de chaque 
 - Redis (local via Docker, ou managé)
 - Neo4j (local via Docker/Desktop, ou [Aura](https://neo4j.com/cloud/aura/) gratuit) — requis uniquement pour le mode GraphRAG
 - Une clé API [Groq](https://console.groq.com) (gratuite)
+- **Poppler** installé localement (fournit `pdftoppm`, nécessaire à l'OCR) :
+  - macOS : `brew install poppler`
+  - Ubuntu/Debian : `sudo apt-get install poppler-utils`
+  - Windows : binaires disponibles sur le [dépôt officiel Poppler pour Windows](https://github.com/oschwartz10612/poppler-windows), à ajouter au PATH
+- Un projet [Google Cloud](https://console.cloud.google.com) avec l'**API Cloud Vision** activée et une clé API restreinte à cette API — requis pour l'OCR des PDF scannés
 
 ### Pour un déploiement en production
 
@@ -70,9 +113,10 @@ Cette étape se déclenche automatiquement en arrière-plan à la fin de chaque 
 - [Neon](https://neon.tech) (PostgreSQL serverless, gratuit)
 - Redis managé (ex: [Upstash](https://upstash.com), gratuit)
 - [Neo4j Aura](https://neo4j.com/cloud/aura/) (gratuit) — pour le mode GraphRAG
-- [Render](https://render.com) (backend, gratuit)
+- [Render](https://render.com) (backend, gratuit) — **déploiement Docker requis** pour disposer de Poppler (`poppler-utils`), non installé par défaut sur l'environnement Node natif de Render
 - [Vercel](https://vercel.com) (frontend, gratuit)
 - Une clé API [Groq](https://console.groq.com) (gratuite)
+- Un projet Google Cloud avec l'API Cloud Vision activée et une clé API restreinte à cette API
 
 ## Installation en local
 
@@ -81,20 +125,6 @@ Cette étape se déclenche automatiquement en arrière-plan à la fin de chaque 
 ```bash
 git clone <url-du-repo>
 cd insightly-docs
-```
-
-### 2. Services annexes
-
-```bash
-# Chroma (mode Naive)
-pip install chromadb
-chroma run --path ./chroma_data
-
-# Redis (nécessaire au mode Graph)
-docker run -d --name redis -p 6379:6379 redis:7-alpine
-
-# Neo4j (nécessaire au mode Graph)
-docker run -d --name neo4j -p 7474:7474 -p 7687:7687 -e NEO4J_AUTH=neo4j/motdepasse neo4j:5
 ```
 
 ### 2. Services annexes (Docker recommandé)
@@ -130,6 +160,7 @@ Une fois les conteneurs lancés, leur état peut être vérifié avec :
 docker ps
 ```
 
+Poppler, lui, ne se lance pas en conteneur : c'est un binaire système utilisé directement par le backend (voir la section Prérequis pour l'installation locale).
 
 ### 3. PostgreSQL
 
@@ -139,7 +170,7 @@ psql -U postgres
 ```sql
 CREATE DATABASE rag_poc;
 ```
-Les tables (`messages`, `documents`, `indexing_jobs`) sont créées automatiquement au démarrage du backend.
+Les tables (`messages`, `documents`, `indexing_jobs`) sont créées automatiquement au démarrage du backend. La colonne `job_type` sur `indexing_jobs` (distinguant les jobs `"document"` des jobs `"graph"`) est ajoutée automatiquement si absente, sans perte de données sur une base existante.
 
 ### 4. Backend
 
@@ -166,12 +197,16 @@ NEO4J_PASSWORD=motdepasse
 # Laisser vide en local pour utiliser Chroma automatiquement :
 # QDRANT_URL=
 # QDRANT_API_KEY=
+
+# OCR des PDF scannés (Google Cloud Vision)
+GOOGLE_VISION_API_KEY=xxxxx
+OCR_MAX_PAGES=30
 ```
 
 ```bash
 npm run dev
 ```
-Le backend tourne sur `http://localhost:3000`.
+Le backend tourne sur `http://localhost:3000`. Le worker d'extraction/OCR (`document-worker`) démarre systématiquement ; le worker d'ingestion graphe (`graph-worker`) ne démarre qu'en mode `RAG_STRATEGY=graph`.
 
 ### 5. Frontend
 
@@ -196,11 +231,14 @@ Crée une instance sur [neo4j.com/cloud/aura](https://neo4j.com/cloud/aura/), r�
 ### File d'attente — Redis managé
 Ex: [Upstash](https://upstash.com), récupère `REDIS_URL`.
 
+### OCR — Google Cloud Vision
+Sur [console.cloud.google.com](https://console.cloud.google.com) : crée un projet, active l'**API Cloud Vision**, crée une clé API restreinte à cette seule API, active la facturation (obligatoire même dans le quota gratuit).
+
 ### Backend — Render
 - New Web Service → Root Directory : `backend`
-- Build Command : `npm install && npm run build`
-- Start Command : `npm start`
-- Variables d'environnement : toutes celles listées ci-dessus, plus `QDRANT_URL` / `QDRANT_API_KEY`
+- **Déploiement Docker requis** (et non le buildpack Node natif), afin d'installer `poppler-utils` au build — nécessaire à l'OCR
+- Build/Start Command : définis dans le `Dockerfile`
+- Variables d'environnement : toutes celles listées ci-dessus, plus `QDRANT_URL` / `QDRANT_API_KEY`, `GOOGLE_VISION_API_KEY`, `OCR_MAX_PAGES`
 
 ### Frontend — Vercel
 - Root Directory : `frontend`
@@ -211,28 +249,34 @@ Ex: [Upstash](https://upstash.com), récupère `REDIS_URL`.
 ```
 backend/
 └── src/
-    ├── server.ts                          # point d'entrée, démarre l'API + le worker graphe
+    ├── server.ts                          # point d'entrée, démarre l'API + document-worker (toujours) + graph-worker (mode graph)
     │
     ├── routes/
-    │   ├── upload.ts                      # upload PDF, embeddings, enfile l'ingestion graphe
+    │   ├── upload.ts                      # upload PDF, vérifie le nombre de pages, enfile l'extraction (répond immédiatement)
     │   ├── chat.ts                        # pose une question, route vers Naive ou GraphRAG
     │   ├── sessions.ts                     # liste / recharge les conversations
-    │   └── indexingStatus.ts               # statut d'indexation graphe en temps réel
+    │   └── indexingStatus.ts               # statut des jobs (document + graph) en temps réel
     │
     ├── queue/
     │   ├── redis.ts                       # connexion Redis (BullMQ)
+    │   ├── documentQueue.ts               # définition de la queue d'extraction/OCR
+    │   ├── documentWorker.ts              # worker : extraction/OCR, chunking, embeddings, vector store
     │   ├── graphQueue.ts                  # définition de la queue d'ingestion graphe
     │   └── graphWorker.ts                 # worker qui consomme la queue et indexe dans Neo4j
     │
     └── services/
         ├── db.ts                          # connexion PostgreSQL, schéma des tables
         ├── conversationStore.ts            # historique des messages par session
-        ├── jobStore.ts                     # suivi des jobs d'indexation (statut, progression)
-        ├── pdfLoader.ts                    # extraction de texte depuis les PDF
+        ├── jobStore.ts                     # suivi des jobs d'indexation (statut, progression, job_type)
+        ├── pdfLoader.ts                    # extraction de texte natif, bascule automatique vers l'OCR si scan détecté
         ├── chunker.ts                      # découpage en chunks avec overlap
         ├── embeddings.ts                   # génération des embeddings locaux
         ├── llm.ts                          # appel Groq pour la génération de réponse
         ├── groqLimiter.ts                  # rate limiting + retry/backoff pour tous les appels Groq
+        │
+        ├── ocr/
+        │   ├── pdfRasterizer.ts            # conversion des pages PDF en images PNG (via Poppler)
+        │   └── visionOcr.ts                # appel à Google Cloud Vision (batching, retry/backoff)
         │
         ├── vectorStore.ts                  # point d'entrée, bascule Chroma <-> Qdrant
         ├── vectorStore.chroma.ts           # implémentation Chroma (local)
@@ -246,7 +290,8 @@ backend/
             ├── graphExtraction.ts           # extraction d'entités/relations via LLM (batché)
             ├── graphSchema.ts               # validation Zod du JSON retourné par le LLM
             ├── entityNormalization.ts       # normalisation des noms d'entités pour la fusion
-            └── graphStore.ts                # couche Neo4j (ingestion + interrogation du graphe)
+            ├── graphStore.ts                # couche Neo4j (ingestion + interrogation du graphe)
+            └── communityDetection.ts        # clustering Louvain + résumés de communautés
 ```
 
 ## Architecture du frontend
@@ -260,13 +305,15 @@ frontend/
     ├── pages/Billing.tsx                   # page des plans tarifaires + FAQ
     └── components/
         ├── ChatBox.tsx                     # zone de conversation, upload, envoi de questions
-        ├── Sidebar.tsx                     # historique des conversations, documents, menu utilisateur
+        ├── Sidebar.tsx                     # historique des conversations, documents (avec statut de traitement), menu utilisateur
         ├── UserMenu.tsx                     # profil, switch Naive/Graph, accès à la page billing
         ├── PlanCard.tsx                     # carte de plan tarifaire
-        ├── IndexingProgress.tsx             # barre de progression de l'indexation graphe
+        ├── IndexingProgress.tsx             # barre de progression des jobs document + graphe, en temps réel
         ├── ThemeToggle.tsx                  # bouton clair/sombre
         └── Icons.tsx                        # icônes SVG partagées
 ```
+
+Un document affiché dans la Sidebar passe par les statuts `processing` → `ready` (ou `partial` / `failed` en cas de problème), mis à jour dès que le job d'extraction correspondant se termine — sans bloquer la requête d'upload initiale.
 
 ## Test de l'API
 
@@ -278,6 +325,16 @@ curl -X POST http://localhost:3000/api/upload \
   -F "sessionId=session-test"
 ```
 
+Réponse immédiate (le traitement se poursuit en arrière-plan) :
+```json
+{
+  "message": "1 fichier(s) reçu(s), traitement en cours en arrière-plan",
+  "totalPages": 12,
+  "files": [{ "filename": "...", "documentJobId": 42 }],
+  "graphIngestion": false
+}
+```
+
 ### Question (Naive ou Graph)
 
 ```bash
@@ -286,11 +343,12 @@ curl -X POST http://localhost:3000/api/chat \
   -d '{"question":"Quelle est la durée de la formation ?","sessionId":"session-test","ragStrategy":"graph"}'
 ```
 
-### Statut d'indexation graphe
+### Statut d'indexation (document + graphe)
 
 ```bash
 curl http://localhost:3000/api/indexing-status/session-test
 ```
+Chaque job retourné inclut désormais `job_type` (`"document"` ou `"graph"`), en plus du statut et de la progression.
 
 ### Conversations
 
