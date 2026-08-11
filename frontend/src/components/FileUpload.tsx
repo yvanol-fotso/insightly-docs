@@ -20,7 +20,9 @@ export default function FileUpload({ sessionId, onUploaded }: Props) {
     setLoading(true);
     try {
       const result = await uploadFiles(files, sessionId);
-      onUploaded(`${result.files.length} fichier(s) indexé(s) (${result.totalStored} chunks au total)`);
+      // Le traitement (extraction/OCR, chunking, embeddings) se fait désormais en
+      // arrière-plan : on ne connaît pas encore le nombre de chunks à ce stade.
+      onUploaded(`${result.files.length} fichier(s) reçu(s), traitement en cours en arrière-plan`);
       setFiles([]);
     } catch (err) {
       console.error(err);
@@ -70,7 +72,7 @@ export default function FileUpload({ sessionId, onUploaded }: Props) {
         onClick={handleUpload}
         disabled={loading || files.length === 0}
       >
-        {loading ? "Indexation en cours..." : "Uploader et indexer"}
+        {loading ? "Envoi en cours..." : "Uploader et indexer"}
       </button>
     </div>
   );

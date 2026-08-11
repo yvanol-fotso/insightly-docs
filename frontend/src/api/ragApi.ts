@@ -1,5 +1,4 @@
-// vu que c est un POC je ne vais pas creer des fichiers de call API pour chaque endpoint.
-// je vais centraliser tous les appels API dans ce fichier.
+// Centralise tous les appels API dans ce fichier.
 
 import axios from "axios";
 
@@ -11,14 +10,13 @@ const api = axios.create({
 
 export interface UploadedFile {
   filename: string;
-  totalChunks: number;
+  documentJobId: number;
 }
 
 export interface UploadResult {
   message: string;
   totalPages: number;
   files: UploadedFile[];
-  totalStored: number;
   graphIngestion?: boolean;
 }
 
@@ -107,12 +105,14 @@ export async function getSession(sessionId: string) {
   return data;
 }
 
+export type IndexingJobType = "document" | "graph";
 
 export interface IndexingJob {
   id: number;
   session_id: string;
   filename: string;
   status: "pending" | "processing" | "completed" | "completed_with_errors" | "failed";
+  job_type: IndexingJobType;
   total_chunks: number;
   processed_chunks: number;
   failed_chunks: number;

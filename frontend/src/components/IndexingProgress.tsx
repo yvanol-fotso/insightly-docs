@@ -5,13 +5,32 @@ import type { IndexingJob } from "../api/ragApi";
 interface IndexingProgressProps {
   sessionId: string;
   onAllCompleted?: () => void;
+  // Appelé une seule fois par job de type "document", dès qu'il atteint un état
+  // terminal (completed / completed_with_errors / failed). Permet au parent de
+  // rafraîchir le nombre réel de chunks une fois connu (pas disponible avant).
+  onDocumentJobSettled?: (job: IndexingJob) => void;
 }
 
 const POLL_INTERVAL_MS = 2000;
 
-export default function IndexingProgress({ sessionId, onAllCompleted }: IndexingProgressProps) {
+const TERMINAL_STATUSES = new Set(["completed", "completed_with_errors", "failed"]);
+
+function jobLabel(job: IndexingJob): string {
+  return job.job_type === "graph" ? "Indexation du graphe" : "Extraction du document";
+}
+
+function jobUnitLabel(job: IndexingJob): string {
+  return job.job_type === "graph" ? "extraits traités" : "extraits générés";
+}
+
+export default function IndexingProgress({
+  sessionId,
+  onAllCompleted,
+  onDocumentJobSettled,
+}: IndexingProgressProps) {
   const [jobs, setJobs] = useState<IndexingJob[]>([]);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const settledJobIdsRef = useRef<Set<number>>(new Set());
 
   useEffect(() => {
     let cancelled = false;
@@ -21,6 +40,19 @@ export default function IndexingProgress({ sessionId, onAllCompleted }: Indexing
         const result = await getIndexingStatus(sessionId);
         if (cancelled) return;
         setJobs(result);
+
+        // new on notifie le parent pour chaque job "document" fraîchement terminé,
+        // une seule fois par job (grâce à settledJobIdsRef)
+        for (const job of result) {
+          if (
+            job.job_type === "document" &&
+            TERMINAL_STATUSES.has(job.status) &&
+            !settledJobIdsRef.current.has(job.id)
+          ) {
+            settledJobIdsRef.current.add(job.id);
+            onDocumentJobSettled?.(job);
+          }
+        }
 
         const stillRunning = result.some(
           (j) => j.status === "pending" || j.status === "processing"
@@ -43,7 +75,7 @@ export default function IndexingProgress({ sessionId, onAllCompleted }: Indexing
       cancelled = true;
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [sessionId, onAllCompleted]);
+  }, [sessionId, onAllCompleted, onDocumentJobSettled]);
 
   const activeJobs = jobs.filter((j) => j.status === "pending" || j.status === "processing");
   const partialJobs = jobs.filter((j) => j.status === "completed_with_errors");
@@ -62,14 +94,18 @@ export default function IndexingProgress({ sessionId, onAllCompleted }: Indexing
         return (
           <div key={job.id} className="indexing-progress__item">
             <div className="indexing-progress__label">
-              <span>Indexation du graphe — {job.filename}</span>
-              <span>{percent}%</span>
+              <span>
+                {jobLabel(job)} — {job.filename}
+              </span>
+              <span>{job.total_chunks > 0 ? `${percent}%` : "…"}</span>
             </div>
             <div className="indexing-progress__bar-track">
               <div className="indexing-progress__bar-fill" style={{ width: `${percent}%` }} />
             </div>
             <div className="indexing-progress__meta">
-              {job.processed_chunks} / {job.total_chunks} extraits traités
+              {job.total_chunks > 0
+                ? `${job.processed_chunks} / ${job.total_chunks} ${jobUnitLabel(job)}`
+                : "Préparation en cours…"}
               {job.failed_chunks > 0 && (
                 <span className="indexing-progress__warning"> · {job.failed_chunks} échec(s)</span>
               )}
@@ -79,21 +115,23 @@ export default function IndexingProgress({ sessionId, onAllCompleted }: Indexing
       })}
 
       {partialJobs.map((job) => {
-        const successRate = Math.round(
-          ((job.total_chunks - job.failed_chunks) / job.total_chunks) * 100
-        );
+        const successRate =
+          job.total_chunks > 0
+            ? Math.round(((job.total_chunks - job.failed_chunks) / job.total_chunks) * 100)
+            : 0;
 
         return (
           <div key={job.id} className="indexing-progress__partial">
             <div className="indexing-progress__partial-header">
-              <span>Indexation partielle - {job.filename}</span>
+              <span>
+                {jobLabel(job)} partielle — {job.filename}
+              </span>
             </div>
             <p className="indexing-progress__partial-text">
-              {job.total_chunks - job.failed_chunks} / {job.total_chunks} extraits indexés avec succès
+              {job.total_chunks - job.failed_chunks} / {job.total_chunks} extraits traités avec succès
               ({successRate}%). {job.failed_chunks} extrait(s) n'ont pas pu être traités, généralement en
-              raison d'une limite de requêtes atteinte auprès du fournisseur LLM. Le graphe de connaissances
-              pour ce document est donc incomplet — les réponses peuvent ne pas couvrir l'intégralité du
-              contenu.
+              raison d'une limite de requêtes atteinte auprès du fournisseur LLM. Le résultat pour ce
+              document est donc incomplet — les réponses peuvent ne pas couvrir l'intégralité du contenu.
             </p>
           </div>
         );
@@ -101,7 +139,7 @@ export default function IndexingProgress({ sessionId, onAllCompleted }: Indexing
 
       {failedJobs.map((job) => (
         <div key={job.id} className="indexing-progress__error">
-          Échec de l'indexation graphe pour {job.filename}
+          Échec de "{jobLabel(job).toLowerCase()}" pour {job.filename}
           {job.error_message ? ` : ${job.error_message}` : ""}
         </div>
       ))}

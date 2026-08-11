@@ -3,9 +3,13 @@ import { listSessions } from "../api/ragApi";
 import { FileIcon, MenuIcon, NewChatIcon, TrashIcon } from "./Icons";
 import UserMenu from "./UserMenu";
 
+export type DocumentStatus = "processing" | "ready" | "partial" | "failed";
+
 export interface DocumentEntry {
   filename: string;
   chunks: number;
+  status?: DocumentStatus; // absent = "ready", pour rester compatible avec l'existant
+  errorMessage?: string;
 }
 
 interface ConversationEntry {
@@ -30,6 +34,19 @@ interface SidebarProps {
   currentPlan: Plan;
   ragMode: RagMode;
   onRagModeChange: (mode: RagMode) => void;
+}
+
+function documentMeta(doc: DocumentEntry): string {
+  switch (doc.status) {
+    case "processing":
+      return "Traitement en cours…";
+    case "partial":
+      return `${doc.chunks} extraits (partiel)`;
+    case "failed":
+      return doc.errorMessage ? `Échec : ${doc.errorMessage}` : "Échec du traitement";
+    default:
+      return `${doc.chunks} extraits`;
+  }
 }
 
 export default function Sidebar({
@@ -103,11 +120,14 @@ export default function Sidebar({
             </p>
           )}
           {documents.map((doc) => (
-            <div className="document-item" key={doc.filename}>
+            <div
+              className={`document-item ${doc.status === "processing" ? "document-item--processing" : ""} ${doc.status === "failed" ? "document-item--failed" : ""}`}
+              key={doc.filename}
+            >
               <FileIcon />
               <div className="document-item__info">
                 <span className="document-item__name" title={doc.filename}>{doc.filename}</span>
-                <span className="document-item__meta">{doc.chunks} extraits</span>
+                <span className="document-item__meta">{documentMeta(doc)}</span>
               </div>
               <button
                 className="icon-button document-item__remove"
