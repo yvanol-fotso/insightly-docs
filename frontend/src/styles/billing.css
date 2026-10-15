@@ -1,0 +1,167 @@
+/* ---------- Billing page ---------- */
+
+.billing-page {
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
+  padding: 48px 24px 72px;
+}
+
+.billing-page__header,
+.billing-page .plans-grid,
+.billing-page__toggle {
+  max-width: 1120px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.billing-page__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+
+.billing-page__title {
+  margin-bottom: 8px;
+  font-size: 26px;
+  letter-spacing: -0.01em;
+}
+
+.billing-page__subtitle {
+  max-width: 540px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+.billing-page__toggle {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 28px;
+}
+
+.billing-toggle {
+  display: inline-grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+  padding: 3px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+
+.billing-toggle__option {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 7px 18px;
+  background: transparent;
+  border: none;
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 500;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.billing-toggle__option:hover:not(.billing-toggle__option--active) {
+  color: var(--text);
+}
+
+.billing-toggle__option--active {
+  background: var(--accent-solid);
+  color: var(--accent-fg);
+}
+
+.billing-toggle__save {
+  padding: 1px 7px;
+  background: var(--success-bg);
+  border-radius: 999px;
+  color: var(--success);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.billing-toggle__option--active .billing-toggle__save {
+  background: rgba(255, 255, 255, 0.18);
+  color: var(--accent-fg);
+}
+
+.billing-page__faq {
+  max-width: 700px;
+  margin: 56px auto 0;
+}
+
+.billing-page__faq h2 {
+  margin-bottom: 20px;
+  font-size: 18px;
+}
+
+.faq-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.faq-item {
+  overflow: hidden;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.faq-item__trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 14px 16px;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 500;
+  text-align: left;
+}
+
+.faq-item__trigger:hover {
+  background: var(--panel-hover);
+}
+
+.faq-item__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-left: 12px;
+  color: var(--text-faint);
+  transition: transform 0.2s ease;
+}
+
+.faq-item--open .faq-item__icon {
+  transform: rotate(180deg);
+  color: var(--accent);
+}
+
+.faq-item__panel {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.25s ease;
+}
+
+.faq-item--open .faq-item__panel {
+  grid-template-rows: 1fr;
+}
+
+.faq-item__panel-inner {
+  overflow: hidden;
+}
+
+.faq-item__panel-inner p {
+  padding: 0 16px 16px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
