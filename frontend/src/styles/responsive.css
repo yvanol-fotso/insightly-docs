@@ -1,0 +1,59 @@
+/* ---------- Responsive ---------- */
+
+@media (max-width: 1180px) {
+  .plans-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    max-width: 640px !important;
+  }
+  .plan-card__description {
+    min-height: 0;
+  }
+}
+
+@media (max-width: 680px) {
+  .plans-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .billing-page {
+    padding: 56px 16px 56px;
+  }
+}
+
+@media (max-width: 768px) {
+  .sidebar {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+  }
+  .sidebar-scrim {
+    display: block;
+  }
+  .chat {
+    --content-gutter: 16px;
+  }
+  .chat__messages {
+    padding-top: 64px;
+  }
+  .chat__empty-state h2 {
+    font-size: 21px;
+  }
+  .composer {
+    padding-bottom: 16px;
+  }
+  .message {
+    max-width: 90%;
+  }
+  .toast-container {
+    left: 16px;
+    right: 16px;
+    bottom: 16px;
+    align-items: stretch;
+  }
+  .toast {
+    max-width: none;
+  }
+  .conversation-item__more {
+    opacity: 1;
+  }
+}

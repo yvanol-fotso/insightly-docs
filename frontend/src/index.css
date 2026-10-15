@@ -1,39 +1,45 @@
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
 
-/* Dark theme (default): blue-slate, single restrained blue accent */
+/*
+ * Design tokens.
+ *
+ * Dark theme (default): warm graphite surfaces with a soft, desaturated blue.
+ * Light theme: built around #e6e5e3 (hsl 53° 1% 90%) — a warm neutral grey, no pure white.
+ *
+ * Accent is split in two on purpose:
+ *   --accent        text, icons, outlines   (readable on the surface)
+ *   --accent-solid  filled buttons, bubbles (calm, never neon)
+ */
 :root {
-  --bg: #0d1117;
-  --bg-elevated: #131820;
-  --panel: #171d27;
-  --panel-hover: #1e2531;
-  --border: #283040;
-  --border-subtle: #1f2632;
+  --bg: #131414;
+  --bg-elevated: #181919;
+  --panel: #1e1f1f;
+  --panel-hover: #272828;
+  --border: #343534;
+  --border-subtle: #272828;
 
-  --text: #e7ebf1;
-  --text-muted: #9aa5b5;
-  --text-faint: #68748a;
+  --text: #e8e7e4;
+  --text-muted: #a4a29d;
+  --text-faint: #77756f;
 
-  --accent: #3e6ee0;
-  --accent-hover: #5282ea;
+  --accent: #8aa5dc;
+  --accent-solid: #4b6aa8;
+  --accent-solid-hover: #5977b6;
   --accent-fg: #ffffff;
-  --accent-bg: rgba(62, 110, 224, 0.12);
-  --accent-border: rgba(62, 110, 224, 0.4);
+  --accent-bg: rgba(138, 165, 220, 0.1);
+  --accent-border: rgba(138, 165, 220, 0.32);
 
-  --success: #3aa77a;
-  --success-bg: rgba(58, 167, 122, 0.14);
-  --warning: #d19a2e;
-  --warning-bg: rgba(209, 154, 46, 0.1);
-  --warning-border: rgba(209, 154, 46, 0.35);
-  --danger: #e0584a;
-  --danger-bg: rgba(224, 88, 74, 0.1);
-  --danger-border: rgba(224, 88, 74, 0.35);
-
-  /* compatibility aliases */
-  --teal: var(--success);
-  --teal-bg: var(--success-bg);
+  --success: #5bb58e;
+  --success-bg: rgba(91, 181, 142, 0.14);
+  --warning: #d6a64a;
+  --warning-bg: rgba(214, 166, 74, 0.1);
+  --warning-border: rgba(214, 166, 74, 0.35);
+  --danger: #e06a5c;
+  --danger-bg: rgba(224, 106, 92, 0.1);
+  --danger-border: rgba(224, 106, 92, 0.35);
 
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 6px 20px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.38);
 
   --radius-sm: 4px;
   --radius-md: 6px;
@@ -51,35 +57,36 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Light theme: soft grey-blue surfaces, no pure white, easy on the eyes */
 :root[data-theme="light"] {
-  --bg: #e6e9ee;
-  --bg-elevated: #eef0f4;
-  --panel: #f3f5f8;
-  --panel-hover: #e0e4ea;
-  --border: #c5ccd7;
-  --border-subtle: #d3d8e0;
+  --bg: #e6e5e3;
+  --bg-elevated: #ecebe9;
+  --panel: #f2f1ef;
+  --panel-hover: #dddcd9;
+  --border: #c8c7c3;
+  --border-subtle: #d5d4d0;
 
-  --text: #1b212b;
-  --text-muted: #434d5e;
-  --text-faint: #667184;
+  --text: #1f1e1c;
+  --text-muted: #4c4a46;
+  --text-faint: #6b6964;
 
-  --accent: #2456c9;
-  --accent-hover: #1c47ad;
-  --accent-bg: rgba(36, 86, 201, 0.09);
-  --accent-border: rgba(36, 86, 201, 0.3);
+  --accent: #34527f;
+  --accent-solid: #3d5a8c;
+  --accent-solid-hover: #314b78;
+  --accent-fg: #ffffff;
+  --accent-bg: rgba(61, 90, 140, 0.08);
+  --accent-border: rgba(61, 90, 140, 0.28);
 
-  --success: #1d805a;
-  --success-bg: rgba(29, 128, 90, 0.12);
-  --warning: #96660d;
-  --warning-bg: rgba(150, 102, 13, 0.09);
-  --warning-border: rgba(150, 102, 13, 0.3);
-  --danger: #b93a2a;
-  --danger-bg: rgba(185, 58, 42, 0.08);
-  --danger-border: rgba(185, 58, 42, 0.3);
+  --success: #2f7a5a;
+  --success-bg: rgba(47, 122, 90, 0.12);
+  --warning: #86600f;
+  --warning-bg: rgba(134, 96, 15, 0.09);
+  --warning-border: rgba(134, 96, 15, 0.3);
+  --danger: #b0392b;
+  --danger-bg: rgba(176, 57, 43, 0.08);
+  --danger-border: rgba(176, 57, 43, 0.3);
 
-  --shadow-sm: 0 1px 2px rgba(20, 28, 40, 0.08);
-  --shadow-md: 0 8px 24px rgba(20, 28, 40, 0.14);
+  --shadow-sm: 0 1px 2px rgba(31, 30, 28, 0.08);
+  --shadow-md: 0 8px 24px rgba(31, 30, 28, 0.14);
 
   color-scheme: light;
 }

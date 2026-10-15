@@ -1,6 +1,7 @@
-// Centralise tous les appels API dans ce fichier.
+// All API calls live in this file.
 
 import axios from "axios";
+import type { ConversationEntry } from "../types";
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3000/api";
 
@@ -46,7 +47,7 @@ export async function uploadFiles(
   } catch (error: any) {
     throw new Error(
       error.response?.data?.error ??
-        `Echec de l'upload (${error.response?.status ?? "unknown"})`
+        `Upload failed (${error.response?.status ?? "unknown"})`
     );
   }
 }
@@ -66,7 +67,7 @@ export async function askQuestion(
   } catch (error: any) {
     throw new Error(
       error.response?.data?.error ??
-        `Echec de la requete (${error.response?.status ?? "unknown"})`
+        `Request failed (${error.response?.status ?? "unknown"})`
     );
   }
 }
@@ -78,22 +79,24 @@ export async function resetConversation(sessionId: string): Promise<void> {
     });
   } catch (error: any) {
     throw new Error(
-      `Echec de la reinitialisation (${error.response?.status ?? "unknown"})`
+      `Could not reset the conversation (${error.response?.status ?? "unknown"})`
     );
   }
 }
 
 export async function listSessions() {
-  const { data } = await api.get<
-    {
-      session_id: string;
-      started_at: string;
-      last_activity: string;
-      preview: string;
-    }[]
-  >("/sessions");
-
+  const { data } = await api.get<ConversationEntry[]>("/sessions");
   return data;
+}
+
+/** Requires PATCH /sessions/:id on the backend (see FEATURES.manageConversations). */
+export async function renameSession(sessionId: string, title: string): Promise<void> {
+  await api.patch(`/sessions/${sessionId}`, { title });
+}
+
+/** Requires DELETE /sessions/:id on the backend (see FEATURES.manageConversations). */
+export async function deleteSession(sessionId: string): Promise<void> {
+  await api.delete(`/sessions/${sessionId}`);
 }
 
 export async function getSession(sessionId: string) {
@@ -127,7 +130,7 @@ export async function getIndexingStatus(sessionId: string): Promise<IndexingJob[
     return data.jobs;
   } catch (error: any) {
     throw new Error(
-      `Echec de la récupération du statut d'indexation (${error.response?.status ?? "unknown"})`
+      `Could not fetch the indexing status (${error.response?.status ?? "unknown"})`
     );
   }
 }
