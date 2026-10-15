@@ -5,9 +5,7 @@ import type { IndexingJob } from "../api/ragApi";
 interface IndexingProgressProps {
   sessionId: string;
   onAllCompleted?: () => void;
-  // Appelé une seule fois par job de type "document", dès qu'il atteint un état
-  // terminal (completed / completed_with_errors / failed). Permet au parent de
-  // rafraîchir le nombre réel de chunks une fois connu (pas disponible avant).
+  // Called once when a "document" job finishes, to update the final document info.
   onDocumentJobSettled?: (job: IndexingJob) => void;
 }
 
@@ -16,11 +14,11 @@ const POLL_INTERVAL_MS = 2000;
 const TERMINAL_STATUSES = new Set(["completed", "completed_with_errors", "failed"]);
 
 function jobLabel(job: IndexingJob): string {
-  return job.job_type === "graph" ? "Indexation du graphe" : "Extraction du document";
+  return job.job_type === "graph" ? "Graph indexing" : "Document extraction";
 }
 
 function jobUnitLabel(job: IndexingJob): string {
-  return job.job_type === "graph" ? "extraits traités" : "extraits générés";
+  return job.job_type === "graph" ? "chunks processed" : "chunks generated";
 }
 
 export default function IndexingProgress({
@@ -41,8 +39,6 @@ export default function IndexingProgress({
         if (cancelled) return;
         setJobs(result);
 
-        // new on notifie le parent pour chaque job "document" fraîchement terminé,
-        // une seule fois par job (grâce à settledJobIdsRef)
         for (const job of result) {
           if (
             job.job_type === "document" &&
@@ -64,7 +60,7 @@ export default function IndexingProgress({
           onAllCompleted?.();
         }
       } catch {
-        // erreur de polling ponctuelle : on retentera au prochain intervalle
+        // Transient polling error: retry on the next interval.
       }
     }
 
@@ -95,7 +91,7 @@ export default function IndexingProgress({
           <div key={job.id} className="indexing-progress__item">
             <div className="indexing-progress__label">
               <span>
-                {jobLabel(job)} — {job.filename}
+                {jobLabel(job)} · {job.filename}
               </span>
               <span>{job.total_chunks > 0 ? `${percent}%` : "…"}</span>
             </div>
@@ -105,9 +101,9 @@ export default function IndexingProgress({
             <div className="indexing-progress__meta">
               {job.total_chunks > 0
                 ? `${job.processed_chunks} / ${job.total_chunks} ${jobUnitLabel(job)}`
-                : "Préparation en cours…"}
+                : "Preparing…"}
               {job.failed_chunks > 0 && (
-                <span className="indexing-progress__warning"> · {job.failed_chunks} échec(s)</span>
+                <span className="indexing-progress__warning"> · {job.failed_chunks} failed</span>
               )}
             </div>
           </div>
@@ -124,14 +120,13 @@ export default function IndexingProgress({
           <div key={job.id} className="indexing-progress__partial">
             <div className="indexing-progress__partial-header">
               <span>
-                {jobLabel(job)} partielle — {job.filename}
+                {jobLabel(job)} partially completed · {job.filename}
               </span>
             </div>
             <p className="indexing-progress__partial-text">
-              {job.total_chunks - job.failed_chunks} / {job.total_chunks} extraits traités avec succès
-              ({successRate}%). {job.failed_chunks} extrait(s) n'ont pas pu être traités, généralement en
-              raison d'une limite de requêtes atteinte auprès du fournisseur LLM. Le résultat pour ce
-              document est donc incomplet — les réponses peuvent ne pas couvrir l'intégralité du contenu.
+              {job.total_chunks - job.failed_chunks} of {job.total_chunks} chunks processed successfully (
+              {successRate}%). {job.failed_chunks} chunk(s) could not be processed, most often because the
+              LLM provider's rate limit was reached. Answers may not cover the entire document.
             </p>
           </div>
         );
@@ -139,8 +134,8 @@ export default function IndexingProgress({
 
       {failedJobs.map((job) => (
         <div key={job.id} className="indexing-progress__error">
-          Échec de "{jobLabel(job).toLowerCase()}" pour {job.filename}
-          {job.error_message ? ` : ${job.error_message}` : ""}
+          "{jobLabel(job)}" failed for {job.filename}
+          {job.error_message ? `: ${job.error_message}` : ""}
         </div>
       ))}
     </div>

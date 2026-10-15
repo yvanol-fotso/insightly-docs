@@ -5,15 +5,7 @@ import fs from "fs/promises";
 import poppler from "pdf-poppler";
 
 /**
- * Convertit chaque page d'un PDF en image PNG (encodée en base64), dans
- * l'ordre des pages. S'appuie sur le binaire système `pdftoppm`
- * (fourni par poppler-utils) via la librairie pdf-poppler.
- *
- * Nécessaire car l'API Google Vision, en mode synchrone (files:annotate),
- * ne traite qu'un maximum de 5 pages par requête et n'accepte pas de PDF
- * multi-pages arbitraire directement. En rasterisant nous-mêmes, on peut
- * envoyer chaque page comme une image indépendante à l'endpoint
- * images:annotate, qui accepte lui jusqu'à 16 images par requête.
+ * Convertit chaque page PDF en image pour permettre le traitement OCR par lot.
  */
 export async function rasterizePdfToImages(pdfPath: string): Promise<string[]> {
   const outDir = await fs.mkdtemp(path.join(os.tmpdir(), "pdf-ocr-"));

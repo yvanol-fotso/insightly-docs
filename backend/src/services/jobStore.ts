@@ -37,9 +37,7 @@ export async function markProcessing(jobId: number) {
 }
 
 /**
- * Fixe le nombre total de chunks a posteriori, pour les jobs dont ce nombre
- * n'est connu qu'après extraction + découpage (job de type "document"),
- * contrairement aux jobs "graph" où il est connu dès la création.
+ * Met à jour le nombre de chunks une fois connu (jobs "document")
  */
 export async function setTotalChunks(jobId: number, totalChunks: number) {
   await pool.query(
@@ -60,9 +58,7 @@ export async function incrementProgress(jobId: number, failed = false) {
 }
 
 /**
- * Marque le job comme terminé. Le statut final dépend du nombre de chunks échoués :
- * - "completed" si tout s'est bien passé
- * - "completed_with_errors" si au moins un chunk a échoué (le résultat est alors partiel)
+ * Termine le job : succès complet ou résultat partiel en cas d'erreurs.
  */
 export async function markCompleted(jobId: number) {
   const result = await pool.query(
