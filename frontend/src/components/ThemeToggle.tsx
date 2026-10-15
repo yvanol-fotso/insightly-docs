@@ -6,18 +6,16 @@ interface ThemeToggleProps {
 }
 
 export default function ThemeToggle({ theme, onToggle }: ThemeToggleProps) {
+  const label = theme === "dark" ? "Switch to light theme" : "Switch to dark theme";
+
   return (
     <button
       className="icon-button theme-toggle"
       onClick={onToggle}
-      aria-label="Changer de thème"
-      title="Changer de thème"
+      aria-label={label}
+      title={label}
     >
-      {theme === "dark" ? (
-        <Sun className="h-5 w-5 transition-all" />
-      ) : (
-        <Moon className="h-5 w-5 transition-all" />
-      )}
+      {theme === "dark" ? <Sun size={18} strokeWidth={1.75} /> : <Moon size={18} strokeWidth={1.75} />}
     </button>
   );
 }

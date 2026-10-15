@@ -22,7 +22,7 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [view, setView] = useState<View>("chat");
 
-  // je use un placeholder pour la vraie logique d'auth/abonnement
+  // Placeholder for the real auth / subscription logic
   const [currentPlan, setCurrentPlan] = useState<Plan>("Starter");
   const [ragMode, setRagMode] = useState<RagMode>("naive");
 
@@ -47,7 +47,7 @@ export default function App() {
     setRefreshKey((v) => v + 1);
   };
 
-// new on met a jour un fichier existant après la fin de l'extraction/OCR.
+  // Update an existing document once extraction / OCR has finished.
   const handleDocumentUpdated = (filename: string, update: Partial<DocumentEntry>) => {
     setDocuments((prev) =>
       prev.map((d) => (d.filename === filename ? { ...d, ...update } : d))
@@ -59,7 +59,7 @@ export default function App() {
   };
 
   const handleSelectPlan = (plan: Plan) => {
-    // New TODO : brancher Stripe Checkout ici à la phase billing
+    // TODO: wire up Stripe Checkout here during the billing phase
     setCurrentPlan(plan);
     setView("chat");
   };
@@ -86,7 +86,8 @@ export default function App() {
           <button
             className="icon-button main__open-sidebar"
             onClick={() => setSidebarOpen(true)}
-            aria-label="Afficher la barre laterale"
+            aria-label="Show sidebar"
+            title="Show sidebar"
           >
             <MenuIcon />
           </button>

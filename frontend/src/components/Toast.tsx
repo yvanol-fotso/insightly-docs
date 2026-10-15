@@ -54,12 +54,12 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     <ToastContext.Provider value={{ showToast }}>
       {children}
 
-      <div className="toast-container">
+      <div className="toast-container" role="status" aria-live="polite">
         {toasts.map((toast) => (
           <div key={toast.id} className={`toast toast--${toast.variant}`}>
             <span className="toast__icon">{toast.icon ?? DEFAULT_ICONS[toast.variant]}</span>
             <span className="toast__message">{toast.message}</span>
-            <button className="toast__close" onClick={() => dismissToast(toast.id)} aria-label="Fermer">
+            <button className="toast__close" onClick={() => dismissToast(toast.id)} aria-label="Dismiss">
               <X size={14} />
             </button>
           </div>
@@ -71,6 +71,6 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
 export function useToast() {
   const ctx = useContext(ToastContext);
-  if (!ctx) throw new Error("useToast doit être utilisé à l'intérieur d'un ToastProvider");
+  if (!ctx) throw new Error("useToast must be used inside a ToastProvider");
   return ctx;
 }

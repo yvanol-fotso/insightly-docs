@@ -11,7 +11,6 @@ const MAX_FILES = 5;
 const MAX_PAGES = 500;
 
 export default function FileUpload({ sessionId, onUploaded }: Props) {
-
   const [files, setFiles] = useState<File[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -20,12 +19,12 @@ export default function FileUpload({ sessionId, onUploaded }: Props) {
     setLoading(true);
     try {
       const result = await uploadFiles(files, sessionId);
-      // Le le traitment  se fait en arrière-plan : le nombre de chunks n'est pas encore connu
-      onUploaded(`${result.files.length} fichier(s) reçu(s), traitement en cours en arrière-plan`);
+      // Processing runs in the background: the chunk count is not known yet.
+      onUploaded(`${result.files.length} file(s) received, processing in the background`);
       setFiles([]);
     } catch (err) {
       console.error(err);
-      onUploaded("Erreur lors de l'upload");
+      onUploaded("Upload failed");
     } finally {
       setLoading(false);
     }
@@ -36,7 +35,10 @@ export default function FileUpload({ sessionId, onUploaded }: Props) {
       {loading && <div className="composer__progress" />}
 
       <h3 className="file-upload__title">
-        Uploader des PDF <span className="file-upload__limits">(max {MAX_FILES}, {MAX_PAGES} pages cumulées)</span>
+        Upload PDFs{" "}
+        <span className="file-upload__limits">
+          (max {MAX_FILES} files, {MAX_PAGES} pages in total)
+        </span>
       </h3>
 
       <label className="file-upload__dropzone">
@@ -50,8 +52,8 @@ export default function FileUpload({ sessionId, onUploaded }: Props) {
         <FileIcon size={20} />
         <span>
           {files.length === 0
-            ? "Cliquez pour choisir un ou plusieurs PDF"
-            : `${files.length} fichier(s) sélectionné(s)`}
+            ? "Click to choose one or more PDFs"
+            : `${files.length} file(s) selected`}
         </span>
       </label>
 
@@ -71,7 +73,7 @@ export default function FileUpload({ sessionId, onUploaded }: Props) {
         onClick={handleUpload}
         disabled={loading || files.length === 0}
       >
-        {loading ? "Envoi en cours..." : "Uploader et indexer"}
+        {loading ? "Uploading…" : "Upload and index"}
       </button>
     </div>
   );

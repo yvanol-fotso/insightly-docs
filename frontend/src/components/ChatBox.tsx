@@ -27,6 +27,12 @@ interface ChatBoxProps {
 const MAX_FILES = 5;
 const MAX_PAGES = 500;
 
+const SUGGESTIONS = [
+  "Summarize the key points of this document",
+  "List the important dates, figures and deadlines",
+  "What risks or obligations are mentioned?",
+];
+
 export default function ChatBox({
   sessionId,
   ragMode,
@@ -53,7 +59,7 @@ export default function ChatBox({
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, isSending]);
 
-  // Notifie le changement de mode RAG par un toast, sans notifier au tout premier rendu.
+  // Show a toast when the RAG mode changes (but not on the very first render).
   useEffect(() => {
     if (isFirstRender.current) {
       isFirstRender.current = false;
@@ -61,9 +67,9 @@ export default function ChatBox({
     }
 
     if (ragMode === "graph") {
-      showToast("Mode Graphe activé", { variant: "info", icon: <Network size={18} /> });
+      showToast("Graph mode enabled", { variant: "info", icon: <Network size={18} /> });
     } else {
-      showToast("Mode recherche standard activé", { variant: "info", icon: <Search size={18} /> });
+      showToast("Standard search enabled", { variant: "info", icon: <Search size={18} /> });
     }
   }, [ragMode, showToast]);
 
@@ -83,7 +89,8 @@ export default function ChatBox({
     try {
       const result = await uploadFiles(combined, sessionId);
 
-      // Le traitement se fait en arrière-plan : le document est affiché en "processing" puis mis à jour à la fin du job
+      // Processing runs in the background: show the document as "processing",
+      // then update it when its job completes.
       const placeholders: DocumentEntry[] = result.files.map((f) => ({
         filename: f.filename,
         chunks: 0,
@@ -93,14 +100,14 @@ export default function ChatBox({
 
       setShowIndexingProgress(true);
 
-      showToast(`${result.files.length} document(s) reçu(s), traitement en cours...`, {
+      showToast(`${result.files.length} document(s) received. Processing…`, {
         variant: "info",
       });
 
       setPendingFiles([]);
     } catch (err) {
       console.error(err);
-      const message = err instanceof Error ? err.message : "L'envoi des documents a echoue.";
+      const message = err instanceof Error ? err.message : "The upload failed.";
       setUploadError(message);
       showToast(message, { variant: "error" });
     } finally {
@@ -108,7 +115,7 @@ export default function ChatBox({
     }
   };
 
-// je met à jour le document dans la Sidebar à la fin d'un job "document".
+  // Update the document in the sidebar when a "document" job settles.
   const handleDocumentJobSettled = (job: IndexingJob) => {
     if (job.status === "failed") {
       onDocumentUpdated(job.filename, {
@@ -117,7 +124,7 @@ export default function ChatBox({
         errorMessage: job.error_message ?? undefined,
       });
       showToast(
-        `Échec du traitement de ${job.filename}${job.error_message ? " : " + job.error_message : ""}`,
+        `Failed to process ${job.filename}${job.error_message ? ": " + job.error_message : ""}`,
         { variant: "error" }
       );
       return;
@@ -131,9 +138,9 @@ export default function ChatBox({
     });
 
     if (status === "partial") {
-      showToast(`${job.filename} indexé partiellement (voir détails)`, { variant: "info" });
+      showToast(`${job.filename}: partially indexed (see details)`, { variant: "warning" });
     } else {
-      showToast(`${job.filename} indexé avec succès`, { variant: "success" });
+      showToast(`${job.filename}: indexing complete`, { variant: "success" });
     }
   };
 
@@ -156,12 +163,17 @@ export default function ChatBox({
       onMessageSent?.();
     } catch (err) {
       console.error(err);
-      const message = err instanceof Error ? err.message : "Une erreur est survenue pendant la generation de la reponse.";
+      const message = err instanceof Error ? err.message : "Something went wrong while generating the answer.";
       setMessages((prev) => [...prev, { role: "assistant", content: message }]);
       showToast(message, { variant: "error" });
     } finally {
       setIsSending(false);
     }
+  };
+
+  const handleSuggestion = (text: string) => {
+    setInput(text);
+    textareaRef.current?.focus();
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -185,11 +197,19 @@ export default function ChatBox({
       <div className="chat__messages" ref={scrollRef}>
         {messages.length === 0 && (
           <div className="chat__empty-state">
-            <h2>Vos documents, enfin faciles à interroger</h2>
+            <h2>Get answers from your documents</h2>
             <p>
-              Ajoutez jusqu'à {MAX_FILES} PDF ({MAX_PAGES} pages cumulées max), et Insightly Docs répond à vos
-              questions en citant précisément les passages concernés.
+              Upload up to {MAX_FILES} PDFs ({MAX_PAGES} pages in total) and ask questions in plain language.
+              Every answer is grounded in your files and cites the documents it came from.
             </p>
+
+            <div className="chat__suggestions">
+              {SUGGESTIONS.map((s) => (
+                <button key={s} className="chat__suggestion" onClick={() => handleSuggestion(s)}>
+                  {s}
+                </button>
+              ))}
+            </div>
           </div>
         )}
 
@@ -198,7 +218,7 @@ export default function ChatBox({
             <div className="message__bubble">{msg.content}</div>
             {msg.sources && msg.sources.length > 0 && (
               <div className="message__sources">
-                Sources : {msg.sources.map((s) => s.filename).join(", ")}
+                Sources: {msg.sources.map((s) => s.filename).join(", ")}
               </div>
             )}
           </div>
@@ -206,7 +226,7 @@ export default function ChatBox({
 
         {isSending && (
           <div className="message message--assistant">
-            <div className="message__bubble message__bubble--typing">
+            <div className="message__bubble message__bubble--typing" aria-label="Generating answer">
               <span className="typing-dot" />
               <span className="typing-dot" />
               <span className="typing-dot" />
@@ -227,7 +247,7 @@ export default function ChatBox({
                 <button
                   className="attachment-chip__remove"
                   onClick={() => removePendingFile(file.name)}
-                  aria-label={`Retirer ${file.name}`}
+                  aria-label={`Remove ${file.name}`}
                 >
                   <CloseIcon size={12} />
                 </button>
@@ -262,8 +282,8 @@ export default function ChatBox({
             className="icon-button composer__attach"
             onClick={handleAttachClick}
             disabled={pendingFiles.length >= MAX_FILES || isUploading}
-            aria-label="Joindre des PDF"
-            title="Joindre des PDF"
+            aria-label="Attach PDFs"
+            title="Attach PDFs"
           >
             <PlusIcon />
           </button>
@@ -271,7 +291,7 @@ export default function ChatBox({
           <textarea
             ref={textareaRef}
             className="composer__textarea"
-            placeholder="Posez votre question..."
+            placeholder="Ask a question about your documents…"
             value={input}
             onChange={handleTextareaChange}
             onKeyDown={handleKeyDown}
@@ -282,7 +302,8 @@ export default function ChatBox({
             className="composer__send"
             onClick={handleSend}
             disabled={!canSend}
-            aria-label="Envoyer"
+            aria-label="Send"
+            title="Send"
           >
             <SendIcon />
           </button>

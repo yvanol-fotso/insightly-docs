@@ -8,7 +8,7 @@ export type DocumentStatus = "processing" | "ready" | "partial" | "failed";
 export interface DocumentEntry {
   filename: string;
   chunks: number;
-  status?: DocumentStatus; // absent = "ready", pour rester compatible avec l'existant
+  status?: DocumentStatus; // absent = "ready"
   errorMessage?: string;
 }
 
@@ -39,13 +39,13 @@ interface SidebarProps {
 function documentMeta(doc: DocumentEntry): string {
   switch (doc.status) {
     case "processing":
-      return "Traitement en cours…";
+      return "Processing…";
     case "partial":
-      return `${doc.chunks} extraits (partiel)`;
+      return `${doc.chunks} chunks (partial)`;
     case "failed":
-      return doc.errorMessage ? `Échec : ${doc.errorMessage}` : "Échec du traitement";
+      return doc.errorMessage ? `Failed: ${doc.errorMessage}` : "Processing failed";
     default:
-      return `${doc.chunks} extraits`;
+      return `${doc.chunks} chunks`;
   }
 }
 
@@ -68,7 +68,7 @@ export default function Sidebar({
   useEffect(() => {
     listSessions()
       .then(setConversations)
-      .catch((err) => console.error("Erreur chargement des conversations", err));
+      .catch((err) => console.error("Failed to load conversations", err));
   }, [refreshKey]);
 
   return (
@@ -78,22 +78,25 @@ export default function Sidebar({
       <aside className={`sidebar ${isOpen ? "sidebar--open" : "sidebar--collapsed"}`}>
         <div className="sidebar__header">
           <span className="sidebar__title">Insightly Docs</span>
-          <button className="icon-button sidebar__collapse" onClick={onToggle} aria-label="Masquer la barre laterale">
+          <button
+            className="icon-button sidebar__collapse"
+            onClick={onToggle}
+            aria-label="Hide sidebar"
+            title="Hide sidebar"
+          >
             <MenuIcon />
           </button>
         </div>
 
         <button className="sidebar__new-session" onClick={onNewSession}>
           <NewChatIcon />
-          Nouvelle conversation
+          New conversation
         </button>
 
         <div className="sidebar__section-label">Conversations</div>
         <div className="sidebar__documents">
           {conversations.length === 0 && (
-            <p className="sidebar__empty">
-              Vos conversations apparaîtront ici après votre première question.
-            </p>
+            <p className="sidebar__empty">No conversations yet.</p>
           )}
           {conversations.map((conv) => (
             <div
@@ -103,21 +106,24 @@ export default function Sidebar({
               style={{ cursor: "pointer" }}
             >
               <div className="document-item__info">
-                <span className="document-item__name">{conv.preview || "Nouvelle conversation"}</span>
+                <span className="document-item__name">{conv.preview || "New conversation"}</span>
                 <span className="document-item__meta">
-                  {new Date(conv.last_activity).toLocaleString("fr-FR")}
+                  {new Date(conv.last_activity).toLocaleString("en-US", {
+                    month: "short",
+                    day: "numeric",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
                 </span>
               </div>
             </div>
           ))}
         </div>
 
-        <div className="sidebar__section-label">Documents indexes (conversation actuelle)</div>
+        <div className="sidebar__section-label">Documents in this conversation</div>
         <div className="sidebar__documents">
           {documents.length === 0 && (
-            <p className="sidebar__empty">
-              Ajoutez un PDF pour commencer — Insightly Docs l'analyse et en extrait les informations clés.
-            </p>
+            <p className="sidebar__empty">No documents yet. Upload a PDF to get started.</p>
           )}
           {documents.map((doc) => (
             <div
@@ -127,12 +133,12 @@ export default function Sidebar({
               <FileIcon />
               <div className="document-item__info">
                 <span className="document-item__name" title={doc.filename}>{doc.filename}</span>
-                <span className="document-item__meta">{documentMeta(doc)}</span>
+                <span className="document-item__meta" title={documentMeta(doc)}>{documentMeta(doc)}</span>
               </div>
               <button
                 className="icon-button document-item__remove"
                 onClick={() => onRemoveDocument(doc.filename)}
-                aria-label={`Retirer ${doc.filename}`}
+                aria-label={`Remove ${doc.filename}`}
               >
                 <TrashIcon />
               </button>
